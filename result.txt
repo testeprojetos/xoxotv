@@ -1,0 +1,36 @@
+=== FASE 1: Extraindo token do Blogger via Puppeteer ===
+
+Carregando p├ígina (sem renderizar player)...
+[COOKIE] sky_uuid=ba096090-9417-413b-9269-292d1cdcbb89; expires=Sun, 04-Jul-2027 15:36:26 GMT; Max-Age=315360
+Token encontrado: AD6v5dwe6gpuhGnvR75wvnsEXTMw8Ys-JbkUbMmY...
+
+=== FASE 2: Acessando Blogger Video com o token ===
+
+URL: https://www.blogger.com/video.g?token=AD6v5dwe6gpuhGnvR75wvnsEXTMw8Ys-JbkUbMmYR9W0bH9NNZHXgq4z7DsTK1bLEWLy-M-RuB_N8oFCRIoVKw5hr0x4tjS6Wnb1nc4o32FH-ZxBCjYfpteQmYjdHWmsCgRYWYlHaQU
+Status Blogger: 200
+f.sid: -4103503018862765390
+bl: boq_bloggeruiserver_20260630.06_p0
+Blogger cookies: NID=532=hm5dliC6M7oZI_EskNnLorbeHCXzDAZtZAH56frijzR8ok2VeXIhV-j0R7U-Xi5M_TWne2jc7knTlMeU9OWM-nNrFOd8
+
+=== FASE 3: Chamando batchexecute para obter URLs do v├¡deo ===
+
+POST URL: https://www.blogger.com/_/BloggerVideoPlayerUi/data/batchexecute?rpcids=WcwnYd&source-path=%2Fvideo.g&f.sid=-4103503018862765390&bl=boq_bloggeruiserver_20260630.06_p0&hl=pt-BR&_reqid=44365&rt=c
+Body: f.req=[[["WcwnYd","[\"AD6v5dwe6gpuhGnvR75wvnsEXTMw8Ys-JbkUbMmYR9W0bH9NNZHXgq4z7DsTK1bLEWLy-M-RuB_N8oFCRIoVKw5hr0x4tjS6Wnb1nc4o32FH-ZxBCjYfpteQmYjdHWmsCgRYWYlHaQU\"]",null,"1"]]]&at=&
+
+Status batchexecute: 200
+Resposta COMPLETA:
+)]}'
+
+2611
+[["wrb.fr","WcwnYd","[1,null,[[\"https://rr1---sn-jhqoxucg-jo4e.googlevideo.com/videoplayback?expire\\u003d1783208188\\u0026ei\\u003dfChJaqCuKcWuy9YPuqa5CQ\\u0026ip\\u003d177.74.234.65\\u0026id\\u003de8012196e17a0829\\u0026itag\\u003d18\\u0026source\\u003dblogger\\u0026requiressl\\u003dyes\\u0026xpc\\u003dEgho7Zf3LnoBAQ\\u003d\\u003d\\u0026cps\\u003d278\\u0026met\\u003d1783179388,\\u0026mh\\u003dOi\\u0026mm\\u003d31\\u0026mn\\u003dsn-jhqoxucg-jo4e\\u0026ms\\u003dau\\u0026mv\\u003dm\\u0026mvi\\u003d1\\u0026pl\\u003d24\\u0026rms\\u003dau,au\\u0026susc\\u003dbl\\u0026svpuc\\u003d1\\u0026eaua\\u003d_HQ-_CIGMMI\\u0026mime\\u003dvideo/mp4\\u0026vprv\\u003d1\\u0026rqh\\u003d1\\u0026dur\\u003d1477.183\\u0026lmt\\u003d1603672531584948\\u0026mt\\u003d1783178940\\u0026txp\\u003d1319224\\u0026sparams\\u003dexpire,ei,ip,id,itag,source,requiressl,xpc,susc,svpuc,eaua,mime,vprv,rqh,dur,lmt\\u0026sig\\u003dAHEqNM4wRgIhAM1kYO3XUAaKNojAGLwL4j0tkuwmphRKlvSE_18FQ7yuAiEA9-qx8DvbQTJ8DoacRzmu4qNJQv1WgmxCswAuduT_s2M\\u003d\\u0026lsparams\\u003dcps,met,mh,mm,mn,ms,mv,mvi,pl,rms\\u0026lsig\\u003dAPaTxxMwRQIgW5VyyaXAya9iyC-riyyi-JsStBQCTF1SNaBCvYc6cFkCIQDaQdTo_svD5Ycxu3j7jE5EoKzHrzZ6DCKHKNlH7_3fXA\\u003d\\u003d\",[18]],[\"https://rr1---sn-jhqoxucg-jo4e.googlevideo.com/videoplayback?expire\\u003d1783208188\\u0026ei\\u003dfChJaqCuKcWuy9YPuqa5CQ\\u0026ip\\u003d177.74.234.65\\u0026id\\u003de8012196e17a0829\\u0026itag\\u003d22\\u0026source\\u003dblogger\\u0026requiressl\\u003dyes\\u0026xpc\\u003dEgho7Zf3LnoBAQ\\u003d\\u003d\\u0026cps\\u003d278\\u0026met\\u003d1783179388,\\u0026mh\\u003dOi\\u0026mm\\u003d31\\u0026mn\\u003dsn-jhqoxucg-jo4e\\u0026ms\\u003dau\\u0026mv\\u003dm\\u0026mvi\\u003d1\\u0026pl\\u003d24\\u0026rms\\u003dau,au\\u0026susc\\u003dbl\\u0026svpuc\\u003d1\\u0026eaua\\u003d_HQ-_CIGMMI\\u0026mime\\u003dvideo/mp4\\u0026vprv\\u003d1\\u0026rqh\\u003d1\\u0026dur\\u003d1477.183\\u0026lmt\\u003d1603672499959359\\u0026mt\\u003d1783178940\\u0026txp\\u003d1311224\\u0026sparams\\u003dexpire,ei,ip,id,itag,source,requiressl,xpc,susc,svpuc,eaua,mime,vprv,rqh,dur,lmt\\u0026sig\\u003dAHEqNM4wRAIgBtlooiVdTy2fxzmFNB8GSd2phz57buvJG7pC7qJom1sCIAE1xC3sZ2ttE8hjUKBw1b61ULML5Eqjhy7-9w0aIn6W\\u0026lsparams\\u003dcps,met,mh,mm,mn,ms,mv,mvi,pl,rms\\u0026lsig\\u003dAPaTxxMwRgIhAK3s00YNue6xZimA5cBLaRkESpyNT6w3uat1olthIfvWAiEAp9n1roApjht2JZTwnuwhEchE6w-wHQxOdGVfrKgwiw4\\u003d\",[22]]],\"https://i9.ytimg.com/vi_blogger/6AEhluF6CCk/1.jpg?sqp\\u003dCPzQpNIGGJAc-oaymwEGCMACELQB\\u0026rs\\u003dAMzJL3lachNK_kyBSo1GSpt-7rx-cGEYjQ\",\"BLOGGER-video-e8012196e17a0829-7635\",\"e8012196e17a0829\",false]",null,null,null,"1"]]
+57
+[["di",170],["af.httprm",170,"3077864993882348444",17]]
+26
+[["e",4,null,null,2708]]
+
+
+=== URLS ENCONTRADAS ===
+
+[URL 1]
+https://rr1---sn-jhqoxucg-jo4e.googlevideo.com/videoplayback?expire
+  Qualidade: desconhecida (itag=null)

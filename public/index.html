@@ -1,0 +1,1943 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AnimePlayer</title>
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+                                    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs }
+                                    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey:            "AIzaSyBaHem45yqhV-V4CyBoqd4bF3-e5RjaCzU",
+      authDomain:        "anime-326c0.firebaseapp.com",
+      projectId:         "anime-326c0",
+      storageBucket:     "anime-326c0.firebasestorage.app",
+      messagingSenderId: "634941967925",
+      appId:             "1:634941967925:web:dda33d015a5f86cbb1eb7c",
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    // ── Expõe para o script principal ────────────────────────────────────────
+    window._fb = { auth, db, GoogleAuthProvider, signInWithPopup, signOut,
+                   onAuthStateChanged, doc, setDoc, getDoc, collection, getDocs };
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0f;
+      --surface: #16161a;
+      --surface2: #1e1e24;
+      --border: #2a2a35;
+      --accent: #7c3aed;
+      --accent-hover: #6d28d9;
+      --accent-glow: rgba(124, 58, 237, 0.35);
+      --text: #e8e8f0;
+      --muted: #8888a0;
+      --radius: 10px;
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #a855f7, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      overflow: hidden;
+    }
+
+    .breadcrumb span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .breadcrumb .sep { opacity: 0.4; flex-shrink: 0; }
+    .breadcrumb .crumb-link {
+      cursor: pointer;
+      transition: color 0.15s;
+      white-space: nowrap;
+    }
+    .breadcrumb .crumb-link:hover { color: var(--text); }
+
+    /* ── Views ── */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* ══════════════════════════════════
+       VIEW 1 — CATÁLOGO
+    ══════════════════════════════════ */
+    #vCatalog {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 36px 24px 72px;
+    }
+
+    .section-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .anime-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 20px;
+    }
+
+    .anime-card {
+      cursor: pointer;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+    }
+
+    .anime-card:hover {
+      transform: translateY(-5px) scale(1.02);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.55), 0 0 0 1px var(--accent);
+      border-color: var(--accent);
+    }
+
+    .anime-card img {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      display: block;
+      background: var(--surface2);
+    }
+
+    .anime-card-info {
+      padding: 10px 12px 12px;
+    }
+
+    .anime-card-title {
+      font-size: 0.86rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .anime-card-meta {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* ══════════════════════════════════
+       VIEW 2 — EPISÓDIOS
+    ══════════════════════════════════ */
+    #vEpisodes {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 36px 24px 72px;
+    }
+
+    /* Hero do anime */
+    .anime-hero {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      margin-bottom: 36px;
+    }
+
+    .anime-hero-poster {
+      width: 120px;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .anime-hero-info { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+
+    .anime-hero-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .anime-hero-meta {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    /* Grid de episódios */
+    .ep-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .ep-card {
+      cursor: pointer;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .ep-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent);
+      box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+    }
+
+    .ep-thumb-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .ep-thumb-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+
+    .ep-card:hover .ep-thumb-wrap img { opacity: 1; }
+
+    /* Ícone de play sobre a thumbnail */
+    .ep-play-icon {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .ep-card:hover .ep-play-icon { opacity: 1; }
+
+    .ep-play-icon svg {
+      width: 44px;
+      height: 44px;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.8));
+    }
+
+    /* Fallback quando não tem thumbnail */
+    .ep-thumb-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface2);
+      color: var(--muted);
+    }
+
+    .ep-thumb-placeholder svg { width: 32px; height: 32px; opacity: 0.3; }
+
+    .ep-info {
+      padding: 10px 12px 12px;
+    }
+
+    .ep-number {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    .ep-title {
+      font-size: 0.84rem;
+      font-weight: 600;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* ══════════════════════════════════
+       VIEW 3 — PLAYER
+    ══════════════════════════════════ */
+    #vPlayer {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 24px 72px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .player-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+
+    .player-wrapper video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    .loading-overlay.visible { display: flex; }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-overlay p { font-size: 0.88rem; color: var(--muted); }
+
+    .player-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .player-meta-left { display: flex; flex-direction: column; gap: 2px; }
+
+    .player-ep-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .player-ep-title {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .quality-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: #a855f7;
+      flex-shrink: 0;
+    }
+
+    .error-box {
+      background: #2a1010;
+      border: 1px solid #6b1a1a;
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      font-size: 0.86rem;
+      color: #f87171;
+      display: none;
+    }
+
+    .error-box.visible { display: block; }
+
+    /* Episódios abaixo do player */
+    .more-eps-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .more-eps-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .ep-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .ep-pill:hover { border-color: var(--accent); background: rgba(124,58,237,0.12); }
+    .ep-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+    /* Footer */
+    footer {
+      padding: 20px 32px;
+      text-align: center;
+      font-size: 0.74rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      header { padding: 14px 16px; }
+      #vCatalog, #vEpisodes, #vPlayer { padding: 20px 16px 56px; }
+      .anime-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+      .ep-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+      .anime-hero { flex-direction: column; }
+      .anime-hero-poster { width: 90px; }
+      .anime-hero-title { font-size: 1.4rem; }
+    }
+
+    /* ── Auth ── */
+    .auth-area {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .btn-login {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 0.82rem;
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-login:hover { border-color: var(--accent); background: rgba(124,58,237,0.1); }
+
+    .user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .btn-logout {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.78rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .btn-logout:hover { color: var(--text); background: var(--surface2); }
+
+    /* ── Barra de progresso no card de episódio ── */
+    .ep-progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: var(--accent);
+      border-radius: 0 2px 0 0;
+      transition: width 0.3s;
+      pointer-events: none;
+    }
+
+    .ep-watched-badge {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #a3e635;
+      pointer-events: none;
+    }
+
+    /* ── Continuar assistindo (no catálogo) ── */
+    .continue-section {
+      margin-bottom: 36px;
+    }
+
+    .continue-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      cursor: pointer;
+      max-width: 420px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .continue-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    .continue-thumb {
+      width: 80px;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      border-radius: 6px;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    .continue-info { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+
+    .continue-label {
+      font-size: 0.72rem;
+      color: var(--accent);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .continue-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .continue-sub {
+      font-size: 0.74rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo" id="logoBtn">AnimePlayer</div>
+  <nav class="breadcrumb" id="breadcrumb" style="display:none"></nav>
+  <div class="auth-area" id="authArea">
+    <button class="btn-login" id="btnLogin">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+      </svg>
+      Entrar com Google
+    </button>
+  </div>
+</header>
+
+<!-- ══ VIEW 1: CATÁLOGO ══ -->
+<div id="vCatalog" class="view active">
+  <div id="vCatalogInner" style="max-width:1200px;margin:0 auto;padding:36px 24px 72px;">
+    <!-- Continuar assistindo (só aparece se logado e tiver histórico) -->
+    <div id="continueSection" class="continue-section" style="display:none">
+      <p class="section-label">Continuar assistindo</p>
+      <div id="continueCard" class="continue-card">
+        <img id="continueThumb" class="continue-thumb" src="" alt="" />
+        <div class="continue-info">
+          <span class="continue-label" id="continueEpLabel">—</span>
+          <span class="continue-title" id="continueEpTitle">—</span>
+          <span class="continue-sub" id="continueSub">—</span>
+        </div>
+      </div>
+    </div>
+    <p class="section-label">Catálogo</p>
+    <div class="anime-grid" id="animeGrid"></div>
+  </div>
+</div>
+
+<!-- ══ VIEW 2: EPISÓDIOS ══ -->
+<div id="vEpisodes" class="view">
+  <div class="anime-hero">
+    <img id="heroPoster" class="anime-hero-poster" src="" alt="" />
+    <div class="anime-hero-info">
+      <h1 class="anime-hero-title" id="heroTitle">—</h1>
+      <p class="anime-hero-meta" id="heroMeta">—</p>
+    </div>
+  </div>
+  <p class="section-label">Episódios</p>
+  <div class="ep-grid" id="epGrid"></div>
+</div>
+
+<!-- ══ VIEW 3: PLAYER ══ -->
+<div id="vPlayer" class="view" style="display:none">
+  <div id="errorBox" class="error-box"></div>
+
+  <div class="player-wrapper">
+    <div id="loadingOverlay" class="loading-overlay visible">
+      <div class="spinner"></div>
+      <p id="loadingMsg">Carregando...</p>
+    </div>
+    <video id="videoPlayer" controls preload="metadata"></video>
+  </div>
+
+  <div class="player-meta" id="playerMeta">
+    <div class="player-meta-left">
+      <span class="player-ep-label" id="playerEpLabel">—</span>
+      <span class="player-ep-title" id="playerEpTitle">—</span>
+    </div>
+    <span class="quality-badge">
+      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+      </svg>
+      720p
+    </span>
+  </div>
+
+  <div>
+    <p class="more-eps-label">Outros episódios</p>
+    <div class="more-eps-list" id="moreEpsList"></div>
+  </div>
+</div>
+
+<footer>AnimePlayer — apenas para uso pessoal</footer>
+
+<script>
+  // ── URL base da API ────────────────────────────────────────────────────────
+  // Em produção aponta para o Railway. Em desenvolvimento usa localhost.
+  const API = window.location.hostname === 'localhost'
+    ? ''   // relativo → localhost:3000
+    : 'https://animeplayer-production.up.railway.app'; // ← troque pela URL do Railway depois do deploy
+
+  // ── Catálogo ───────────────────────────────────────────────────────────────
+  // Para adicionar mais animes: inclua um objeto no array CATALOG.
+  // Para adicionar episódios: inclua em episodes[] do anime correspondente.
+  // "thumb" é opcional — se omitir, mostra placeholder escuro.
+  const CATALOG = [
+    {
+      id: 'one-piece-dub',
+      title: 'One Piece',
+      description: 'Dublado · 1999',
+      poster: '/onepiece.jpeg',
+      episodes: [
+        { label: 'Episódio 1', title: 'Eu sou Luffy! O homem que será o Rei dos Piratas!', goyabuId: '40431', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b474cc03e.webp' },
+        { label: 'Episódio 2', title: 'O grande espadachim aparece! Caçador de piratas, Roronoa Zoro', goyabuId: '40432', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b475a8ddf.webp' },
+        { label: 'Episódio 3', title: 'Morgan vs Luffy! Quem é aquela linda misteriosa?', goyabuId: '40433', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b476a20de.webp' },
+        { label: 'Episódio 4', title: 'O passado de Luffy! Shanks, o Ruivo, aparece!', goyabuId: '40434', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b477b6b72.webp' },
+        { label: 'Episódio 5', title: 'Medo, poder misterioso! Palhaço-pirata, Capitão Buggy!', goyabuId: '40435', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b919e6b4a.webp' },
+        { label: 'Episódio 6', title: 'Situação desesperadora! Moji, o domador contra Luffy!', goyabuId: '40436', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b91b54f79.webp' },
+        { label: 'Episódio 7', title: 'Grande duelo! Zoro, o espadachim contra Cabaji, o acrobata!', goyabuId: '40437', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b940868ab.webp' },
+        { label: 'Episódio 8', title: 'Quem será o vencedor? Confronto de habilidades da Akuma no Mi!', goyabuId: '40438', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b913acbd6.webp' },
+        { label: 'Episódio 9', title: 'Honorável mentiroso? Capitão Usopp', goyabuId: '40439', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b91d3bdcb.webp' },
+        { label: 'Episódio 10', title: 'O homem mais estranho do mundo! Jango, o hipnotizador!', goyabuId: '40440', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7ee1f959.webp' },
+        { label: 'Episódio 11', title: 'Revelando a conspiração! O pirata mordomo, Capitão Kuro', goyabuId: '40441', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7efa8561.webp' },
+        { label: 'Episódio 12', title: 'Impacto violento! Grupo de piratas Kuroneko. Grandes ataques e defesas na ladeira!', goyabuId: '40442', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7f00ad1a.webp' },
+        { label: 'Episódio 13', title: 'A temível dupla! Irmãos Nyaban vs Zoro.', goyabuId: '40443', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7f11a1e5.webp' },
+        { label: 'Episódio 14', title: 'A volta de Luffy! A incrível persistência da senhorita Kaya.', goyabuId: '40444', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b8e9d90d6.webp' },
+        { label: 'Episódio 15', title: 'Derrote o Kuro! As lágrimas da decisão de um homem chamado Usopp!', goyabuId: '40445', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7dc5788c.webp' },
+        { label: 'Episódio 16', title: 'Protejam Kaya! O grandioso trabalho dos Piratas de Usopp!', goyabuId: '40446', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7dd37b34.webp' },
+        { label: 'Episódio 17', title: 'Explosão de raiva! O final da batalha entre Kuro e Luffy!', goyabuId: '40447', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7df3fa16.webp' },
+        { label: 'Episódio 18', title: 'Você é uma raridade! Gaimon e seus estranhos amigos!', goyabuId: '40448', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7e0d93d3.webp' },
+        { label: 'Episódio 19', title: 'Teste! O juramento de Zoro e Kuina!', goyabuId: '40449', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7e24f8af.webp' },
+        { label: 'Episódio 20', title: 'O famoso cozinheiro! Sanji, do restaurante flutuante.', goyabuId: '40450', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b75be76cc.webp' },
+        { label: 'Episódio 21', title: 'Um freguês indesejado! A comida de Sanji e a gratidão de Gin.', goyabuId: '40451', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b75d19922.webp' },
+        { label: 'Episódio 22', title: 'A frota pirata mais poderosa! Capitão Don Krieg.', goyabuId: '40452', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b75e33dc5.webp' },
+        { label: 'Episódio 23', title: 'Protejam o Baratie! O grande pirata da perna vermelha, Zeff.', goyabuId: '40453', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b75f5b059.webp' },
+        { label: 'Episódio 24', title: 'Mihawk Olhos de Falcão! Zoro, o espadachim, cai no mar.', goyabuId: '40454', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b75a72218.webp' },
+        { label: 'Episódio 25', title: 'Sequência de chutes mortais! Sanji vs Pearl, a Parede de Ferro.', goyabuId: '40455', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7051f53c.webp' },
+        { label: 'Episódio 26', title: 'O sonho de Zeff e Sanji. O mar dos sonhos, All Blue.', goyabuId: '40456', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b706bee7a.webp' },
+        { label: 'Episódio 27', title: 'O diabólico homem de sangue frio. Comandante de batalha da tripulação Pirata, Gin.', goyabuId: '40457', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b70822744.webp' },
+        { label: 'Episódio 28', title: 'Eu não morrerei! Desfecho: Luffy vs Krieg!', goyabuId: '40458', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b70970561.webp' },
+        { label: 'Episódio 29', title: 'O resultado de uma batalha mortal! A lança interior!', goyabuId: '40459', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b7038d9e6.webp' },
+        { label: 'Episódio 30', title: 'Partida! O cozinheiro do mar e Luffy viajam juntos.', goyabuId: '40460', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b602a70a8.webp' },
+        { label: 'Episódio 31', title: 'O homem mais terrível do Mar do Leste! Arlong, da Gangue dos Tritões!', goyabuId: '40461', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b601c2a36.webp' },
+        { label: 'Episódio 32', title: 'A bruxa da Vila Kokoyashi! A administradora feminina de Arlong.', goyabuId: '40462', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b67dc1018.webp' },
+        { label: 'Episódio 33', title: 'Usopp irá morrer?! Luffy ainda não desembarcou?', goyabuId: '40463', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b67f43cec.webp' },
+        { label: 'Episódio 34', title: 'Reunidos! Usopp conta a verdadeira história de Nami.', goyabuId: '40464', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b67cd0390.webp' },
+        { label: 'Episódio 35', title: 'O passado escondido! A guerreira Bellemere!', goyabuId: '40465', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b5df74327.webp' },
+        { label: 'Episódio 36', title: 'Sobrevivam! Bellemere, a mãe, e a família de Nami!', goyabuId: '40466', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b5e066472.webp' },
+        { label: 'Episódio 37', title: 'Luffy se levanta! O fim de uma promessa quebrada!', goyabuId: '40467', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b5e1b60c0.webp' },
+        { label: 'Episódio 38', title: 'Luffy em apuros! Tritões vs Piratas do Chapéu de palha!', goyabuId: '40468', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b5e2b6be1.webp' },
+        { label: 'Episódio 39', title: 'Luffy submerge! Zoro vs o polvo Hatchan.', goyabuId: '40469', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b5e3eba30.webp' },
+        { label: 'Episódio 40', title: 'Guerreiros orgulhosos! A violenta batalha de Sanji e Usopp.', goyabuId: '40470', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b58331b4a.webp' },
+        { label: 'Episódio 41', title: 'Luffy vai com tudo! A decisão de Nami e o chapéu de palha.', goyabuId: '40471', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b58526887.webp' },
+        { label: 'Episódio 42', title: 'Explosão! Tritão Arlong. Ataque feroz de dentro do mar!', goyabuId: '40472', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b6515d652.webp' },
+        { label: 'Episódio 43', title: 'Fim do Império dos Tritões! A Nami é minha companheira!', goyabuId: '40473', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b57e948fd.webp' },
+        { label: 'Episódio 44', title: 'Uma partida sorridente! Adeus cidade natal, Vila Kokoyashi.', goyabuId: '40474', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b57dd31b9.webp' },
+        { label: 'Episódio 45', title: 'Procura-se! O mundo conhece Luffy chapéu de palha!', goyabuId: '40475', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b529deb5f.webp' },
+        { label: 'Episódio 46', title: 'Atrás do Chapéu de palha! A grande aventura do pequeno Buggy!', goyabuId: '40476', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b52b27e34.webp' },
+        { label: 'Episódio 47', title: 'Você esteve esperando por isso! O retorno do Capitão Buggy!', goyabuId: '40477', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b52c2e22e.webp' },
+        { label: 'Episódio 48', title: 'A cidade do começo e do fim. A chegada em Loguetown.', goyabuId: '40478', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b52d974c4.webp' },
+        { label: 'Episódio 49', title: 'Sandai Kitetsu e Yubashiri! As novas espadas de Zoro e a mulher Sargento.', goyabuId: '40479', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b52e9318f.webp' },
+        { label: 'Episódio 50', title: 'Usopp vs Daddy carregador de crianças. O duelo em plena luz do dia.', goyabuId: '40480', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b4e958225.webp' },
+        { label: 'Episódio 51', title: 'Uma incandescente batalha culinária? Sanji vs a chef espetacular.', goyabuId: '40481', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b4ea4a30b.webp' },
+        { label: 'Episódio 52', title: 'A revanche de Buggy! O homem que sorri na plataforma de execução!', goyabuId: '40482', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b4eb75490.webp' },
+        { label: 'Episódio 53', title: 'A lenda começou! Em direção à Grand line!', goyabuId: '40483', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b52823e69.webp' },
+        { label: 'Episódio 54', title: 'Pressentimento de uma nova aventura! Apis, a garota misteriosa.', goyabuId: '40484', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b4ecbeeb9.webp' },
+        { label: 'Episódio 55', title: 'A criatura milagrosa! O segredo de Apis e a ilha lendária.', goyabuId: '40485', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b9b8f2996.webp' },
+        { label: 'Episódio 56', title: 'O ataque de Erik! A grande fuga da ilha Gunkan!', goyabuId: '40486', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b9b9a24ca.webp' },
+        { label: 'Episódio 57', title: 'A ilha solitária em um mar distante! A lendária Lost Island.', goyabuId: '40487', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b9ba9a343.webp' },
+        { label: 'Episódio 58', title: 'O duelo nas ruínas! O tenso Zoro vs Erik!', goyabuId: '40488', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b9bc2f01e.webp' },
+        { label: 'Episódio 59', title: 'Luffy completamente cercado! O plano secreto do Comodoro Nelson.', goyabuId: '40489', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1b9bdd8a60.webp' },
+        { label: 'Episódio 60', title: 'Aquele que voa sobre os céus! A lenda milenar renasce!', goyabuId: '40490', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba2ae90b6.webp' },
+        { label: 'Episódio 61', title: 'Fúria na decisão! Superem a Red Line!', goyabuId: '40491', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba2c55292.webp' },
+        { label: 'Episódio 62', title: 'Na primeira fortaleza? Surge a baleia gigante - Laboon.', goyabuId: '40492', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba2dd59ba.webp' },
+        { label: 'Episódio 63', title: 'A promessa de um homem! Luffy e a baleia, a promessa do reencontro.', goyabuId: '40493', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba2f63e8a.webp' },
+        { label: 'Episódio 64', title: 'A cidade que recepciona os piratas? Desembarcando em Wiskey Peak.', goyabuId: '40494', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba3079420.webp' },
+        { label: 'Episódio 65', title: 'A Explosiva Santouryuu! Zoro vs Baroque Works! A princesa de Alabasta.', goyabuId: '40495', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba6ce015e.webp' },
+        { label: 'Episódio 66', title: 'Uma luta séria! Luffy vs Zoro, A grande batalha misteriosa!', goyabuId: '40496', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba6ddb627.webp' },
+        { label: 'Episódio 67', title: 'Entreguem a princessa Vivi! A partida do bando de Luffy.', goyabuId: '40497', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba6f116fe.webp' },
+        { label: 'Episódio 68', title: 'Ânimo, Coby! Recordações da dura briga com a Marinha de Coby-Meppo.', goyabuId: '40498', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba703401a.webp' },
+        { label: 'Episódio 69', title: 'A determinação de Coby-Meppo! O orgulho paternal do Vice-Almirante Garp!', goyabuId: '40499', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ba713a954.webp' },
+        { label: 'Episódio 70', title: 'A antiga ilha! A sombra à espreita em Little Garden.', goyabuId: '40500', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bad43f516.webp' },
+        { label: 'Episódio 71', title: 'Um grande duelo! Os gigantes Dorry e Brogy!', goyabuId: '40501', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bad6ce6bb.webp' },
+        { label: 'Episódio 72', title: 'A fúria de Luffy! Golpe baixo em uma batalha sagrada!', goyabuId: '40502', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bad943b83.webp' },
+        { label: 'Episódio 73', title: 'Brogy lamenta a vitória! O julgamento de Elbaf!', goyabuId: '40503', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bada8c1c0.webp' },
+        { label: 'Episódio 74', title: 'A vela do diabo! Lágrimas de arrependimento e lágrimas de raiva!', goyabuId: '40504', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bb9697de5.webp' },
+        { label: 'Episódio 75', title: 'Luffy é atacado por magia! Armadilha colorida!', goyabuId: '40505', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bb9a81f89.webp' },
+        { label: 'Episódio 76', title: 'Contra-ataque crítico! O sagaz Usopp e o kaenboshi!', goyabuId: '40506', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bb9bec810.webp' },
+        { label: 'Episódio 77', title: 'Adeus à ilha dos gigantes! Em direção à Alabasta!', goyabuId: '40507', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bb9d634d4.webp' },
+        { label: 'Episódio 78', title: 'Nami doente? Do outro lado da neve que cai no oceano!', goyabuId: '40508', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bb9e68a40.webp' },
+        { label: 'Episódio 79', title: 'Emboscada! O Bliking e Wapol, o Blik.', goyabuId: '40509', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bba001c85.webp' },
+        { label: 'Episódio 80', title: 'Uma ilha sem médico? Aventura em um país sem nome e com neve!', goyabuId: '40510', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bc46950e1.webp' },
+        { label: 'Episódio 81', title: 'Está feliz? Uma médica que foi chamada de bruxa.', goyabuId: '40511', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bc481aa0a.webp' },
+        { label: 'Episódio 82', title: 'A decisão de Dalton! A chegada das forças de Wapol.', goyabuId: '40512', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bc494e4bd.webp' },
+        { label: 'Episódio 83', title: 'A Ilha Que Vive Sob Neve! Suba os Drum Rockies!', goyabuId: '40514', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bc4b19395.webp' },
+        { label: 'Episódio 84', title: 'A rena do nariz azul! O segredo de Chopper.', goyabuId: '40515', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bc4c296fc.webp' },
+        { label: 'Episódio 85', title: 'O sonho dos excluídos! Hiluluk, o curandeiro!', goyabuId: '40516', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd01c4e78.webp' },
+        { label: 'Episódio 86', title: 'As flores de cerejeira de Hiluluk e a determinação herdada!', goyabuId: '40517', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd029d65b.webp' },
+        { label: 'Episódio 87', title: 'Contra o Exército de Wapol! As habilidades da Baku Baku no Mi!', goyabuId: '40518', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd0384378.webp' },
+        { label: 'Episódio 88', title: 'A Akuma no Mi do tipo zoan! As sete transformações de Chopper!', goyabuId: '40519', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd04e10b6.webp' },
+        { label: 'Episódio 89', title: 'Quando um reinado acaba! A crença da bandeira será eterna.', goyabuId: '40520', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd06baf67.webp' },
+        { label: 'Episódio 90', title: 'As flores de cerejeiras de Hiluluk! O milagre nos Drum Rockies.', goyabuId: '40521', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bdb9d15ef.webp' },
+        { label: 'Episódio 91', title: 'Adeus ilha de Drum! Estou indo para o mar!', goyabuId: '40522', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd806e29f.webp' },
+        { label: 'Episódio 92', title: 'O herói de Alabasta! E a bailarina do navio!', goyabuId: '40523', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bd80eb15e.webp' },
+        { label: 'Episódio 93', title: 'Chegando no país do deserto! O pó que faz chover e o exército rebelde..', goyabuId: '40524', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bdbb09c49.webp' },
+        { label: 'Episódio 94', title: 'O reencontro dos poderosos! Seu nome é Ace dos punhos de fogo.', goyabuId: '40525', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bdb08ca68.webp' },
+        { label: 'Episódio 95', title: 'Ace e Luffy! Calorosas lembranças e laços de irmandade.', goyabuId: '40526', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1be14484ef.webp' },
+        { label: 'Episódio 96', title: 'A cidade verde, Erumalu, e os Kung fu dugong!', goyabuId: '40527', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1be15077b7.webp' },
+        { label: 'Episódio 97', title: 'Aventura no país da areia! Os monstros da Terra escaldante.', goyabuId: '40528', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1be15f27db.webp' },
+        { label: 'Episódio 98', title: 'Surgem os Piratas do deserto! Homens que vivem livremente.', goyabuId: '40529', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1be1709c37.webp' },
+        { label: 'Episódio 99', title: 'O espírito dos falsos! O coração do exército rebelde, Kamyu!', goyabuId: '40530', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1be180ab14.webp' },
+        { label: 'Episódio 100', title: 'O guerreiro rebelde. Kohza! O sonho jurado a Vivi.', goyabuId: '40531', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bea8978b5.webp' },
+        { label: 'Episódio 101', title: 'A batalha no nevoeiro de calor! Ace vs Homem escorpião.', goyabuId: '40532', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bea2abc03.webp' },
+        { label: 'Episódio 102', title: 'As ruínas antigas e as almas perdidas! Amigos de Vivi, e a forma da nação.', goyabuId: '40533', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bea17eaee.webp' },
+        { label: 'Episódio 103', title: 'No Spiders café. Os líderes inimigos se reúnem as oito horas.', goyabuId: '40534', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1bea08f5db.webp' },
+        { label: 'Episódio 104', title: 'Luffy vs Vivi! Juramento de lágrimas que criam companheiros.', goyabuId: '40535', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1be9fd043f.webp' },
+        { label: 'Episódio 105', title: 'Guerra em Alabasta! Rainbase, A cidade dos sonhos.', goyabuId: '40536', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c0cd4d147.webp' },
+        { label: 'Episódio 106', title: 'A absoluta armadilha final! Investida ao Rain Dinners.', goyabuId: '40537', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c0ce20b08.webp' },
+        { label: 'Episódio 107', title: 'A operação utopia começa! Os rebeldes começam a se movimentar.', goyabuId: '40538', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c316be7aa.webp' },
+        { label: 'Episódio 108', title: 'O terrível Bananawani e Mr. Prince.', goyabuId: '40539', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c03fbfc4c.webp' },
+        { label: 'Episódio 109', title: 'A chave para uma reversão e fuga! A Doru Doru ball!', goyabuId: '40540', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c03ecf013.webp' },
+        { label: 'Episódio 110', title: 'Batalha sem compaixão! Luffy vs Crocodile.', goyabuId: '40541', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c170cd177.webp' },
+        { label: 'Episódio 111', title: 'Correr para um milagre! Alabasta, Reino animal.', goyabuId: '40542', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c17209f79.webp' },
+        { label: 'Episódio 112', title: 'Exército rebelde vs exército real! O combate final será em Alubarna.', goyabuId: '40543', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c1734fa31.webp' },
+        { label: 'Episódio 113', title: 'Alubarna dos sofrimentos! A feroz batalha do Capitão Carue!', goyabuId: '40544', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c174992a8.webp' },
+        { label: 'Episódio 114', title: 'Insulto ao sonho dos amigos! Batalha na 4ª avenida na galeria da toupeira.', goyabuId: '40545', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c1764d9a3.webp' },
+        { label: 'Episódio 115', title: 'A grande Interpretação de hoje! Mane Mane montage!', goyabuId: '40546', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c20b2d864.webp' },
+        { label: 'Episódio 116', title: 'Transformando-se em Nami! O poderoso Ballet kenpo de Bon Clay.', goyabuId: '40547', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c20c3f2ce.webp' },
+        { label: 'Episódio 117', title: 'A advertência do tornado de Nami! Explosão do Clima tact.', goyabuId: '40548', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c20d7adcb.webp' },
+        { label: 'Episódio 118', title: 'O segredo da família real! A antiga arma, Pluton.', goyabuId: '40549', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c209c5f12.webp' },
+        { label: 'Episódio 119', title: 'Essência de uma poderosa espada! O poder de cortar o aço e a respiração de todas as coisas.', goyabuId: '40550', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c20ed6166.webp' },
+        { label: 'Episódio 120', title: 'A batalha termina! Kohza ergue a bandeira branca!', goyabuId: '40551', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c2a73133c.webp' },
+        { label: 'Episódio 121', title: 'A voz de Vivi não é ouvida! Cai um herói!', goyabuId: '40552', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c2a7c7f0e.webp' },
+        { label: 'Episódio 122', title: 'Crocodilo de areia e Luffy de água! Duelo mortal: segundo round.', goyabuId: '40553', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c2a8e4e2b.webp' },
+        { label: 'Episódio 123', title: 'Cheiro de crocodilo! Corra para o cemitério da família real, Luffy!', goyabuId: '40554', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c2aa1c743.webp' },
+        { label: 'Episódio 124', title: 'A hora do pesadelo se aproxima! A base secreta do Clã suna suna.', goyabuId: '40555', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c2ac1e814.webp' },
+        { label: 'Episódio 125', title: 'Asas magníficas! Meu nome é Pell, o espírito guardião do reino.', goyabuId: '40556', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c2ef5a00b.webp' },
+        { label: 'Episódio 126', title: 'Eu vou te superar! A chuva cai sobre Alabasta.', goyabuId: '40557', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c35a8e7ca.webp' },
+        { label: 'Episódio 127', title: 'Adeus as armas! Piratas e um pouco de Justiça.', goyabuId: '40558', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c3510714e.webp' },
+        { label: 'Episódio 128', title: 'O banquete dos piratas e o plano para escapar de Alabasta!', goyabuId: '40559', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c34c0b3eb.webp' },
+        { label: 'Episódio 129', title: 'Tudo começou naquele dia! Vivi conta suas aventuras.', goyabuId: '40560', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c34475dd1.webp' },
+        { label: 'Episódio 130', title: 'Cheiro de perigo! A sétima é Nico Robin.', goyabuId: '40561', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c3b84ec3f.webp' },
+        { label: 'Episódio 131', title: 'Primeiro paciente! Anedota da Rumble ball.', goyabuId: '40562', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c3b8e4cb0.webp' },
+        { label: 'Episódio 132', title: 'A rebelião da navegadora! Por um sonho inabalável.', goyabuId: '40563', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c3b9b41b7.webp' },
+        { label: 'Episódio 133', title: 'Receita herdada! Sanji, o expert do curry.', goyabuId: '40564', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c3babb5d1.webp' },
+        { label: 'Episódio 134', title: 'Eu vou fazer florescer! A Bola 8-Shaku do viril Usopp.', goyabuId: '40565', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c3bbac806.webp' },
+        { label: 'Episódio 135', title: 'O infame caçador de piratas! O errante espadachim, Zoro.', goyabuId: '40566', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c40cbb7e1.webp' },
+        { label: 'Episódio 136', title: 'Zenny vive na Ilha da Cabra e há um barco pirata na sua montanha.', goyabuId: '40567', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c40e36b78.webp' },
+        { label: 'Episódio 137', title: 'Não se parece uma ganância incrível? A ambição do agiota Zenny!', goyabuId: '40568', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c414f11ec.webp' },
+        { label: 'Episódio 138', title: 'O paradeiro do tesouro da ilha! A todo vapor, Piratas de Zenny!', goyabuId: '40569', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c413d1c37.webp' },
+        { label: 'Episódio 139', title: 'A lenda da Neblina Arco-Íris! O Velho Henzon da Ilha Ruluka.', goyabuId: '40570', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c40b7d0e9.webp' },
+        { label: 'Episódio 140', title: 'Habitantes da Terra do Nunca! Os Piratas da Abóbora!', goyabuId: '40571', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c4d861ab3.webp' },
+        { label: 'Episódio 141', title: 'Sentimentos pela terra natal! O inescapável cemitério dos piratas!', goyabuId: '40572', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c45dcb77b.webp' },
+        { label: 'Episódio 142', title: 'Batalha inevitável! A ambição de Whetton e a Torre Arco-Íris!', goyabuId: '40573', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c45ebc955.webp' },
+        { label: 'Episódio 143', title: 'Então começa a lenda! Para o fim do arco-íris!', goyabuId: '40574', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c45c082de.webp' },
+        { label: 'Episódio 144', title: 'O log atraído! Masira, o Rei do Resgate!', goyabuId: '42516', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c4da1e6a9.webp' },
+        { label: 'Episódio 145', title: 'Monstros aparecem! Não toque nos piratas do Barba Branca.', goyabuId: '42517', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c4f6d89fb.webp' },
+        { label: 'Episódio 146', title: 'Pare de sonhar! A cidade do ridículo, Mock Town!', goyabuId: '42518', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c5965a9a2.webp' },
+        { label: 'Episódio 147', title: 'O pico dos piratas! O homem que fala dos sonhos e o rei da exploração.', goyabuId: '42519', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c597b46fa.webp' },
+        { label: 'Episódio 148', title: 'A família lendária! Norland, o mentiroso.', goyabuId: '42520', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c4f7bf140.webp' },
+        { label: 'Episódio 149', title: 'Em direção às nuvens! Encontrem o Southbird!', goyabuId: '42521', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c4f91c823.webp' },
+        { label: 'Episódio 150', title: 'Não é possível realizar o sonho? Bellamy contra a Aliança Saruyama.', goyabuId: '42522', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c5e002a9b.webp' },
+        { label: 'Episódio 151', title: 'O Homem de cem milhões! A autoridade máxima do mundo e o pirata Barba Negra!', goyabuId: '42523', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c5e3a91b3.webp' },
+        { label: 'Episódio 152', title: 'Navegando até o céu! Peguem a Knock Up Stream!', goyabuId: '42524', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c671d2eff.webp' },
+        { label: 'Episódio 153', title: 'Esse é o mar do céu! O cavaleiro do céu e o portão do paraíso.', goyabuId: '42525', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c66fc0706.webp' },
+        { label: 'Episódio 154', title: 'Skypiea, o reino de deus! Os anjos da praia de nuvens.', goyabuId: '42526', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c66f0d0c1.webp' },
+        { label: 'Episódio 155', title: 'O solo sagrado proibido! A terra onde deus mora e o julgamento celestial!', goyabuId: '42527', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c77b8ff2c.webp' },
+        { label: 'Episódio 156', title: 'Já são criminosos? Os guardas da lei de Skypiea.', goyabuId: '42528', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c77c3bb8d.webp' },
+        { label: 'Episódio 157', title: 'Podemos fugir? Começa a provação de deus!', goyabuId: '42529', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c6d853644.webp' },
+        { label: 'Episódio 158', title: 'Armadilha na Rua Adorável! O todo poderoso Deus Enel.', goyabuId: '42530', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c6d6d858a.webp' },
+        { label: 'Episódio 159', title: 'Vá em frente, pequeno corvo! Rumo ao altar do sacrifício!', goyabuId: '42531', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c6d5a8e34.webp' },
+        { label: 'Episódio 160', title: 'Taxa de sobrevivência 10%! O sacerdote Satori com o poder do mantra!', goyabuId: '42532', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c77e9fe0e.webp' },
+        { label: 'Episódio 161', title: 'O perigo da provação das bolhas! Lutem até a morte na Floresta Perdida!', goyabuId: '42533', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c8358bb2b.webp' },
+        { label: 'Episódio 162', title: 'Chopper em perigo! Antigo deus x sacerdote Shura!', goyabuId: '42534', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c7a430aab.webp' },
+        { label: 'Episódio 163', title: 'Sempre misteriosa! Provação das cordas e provação do amor!', goyabuId: '42535', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c843a2e42.webp' },
+        { label: 'Episódio 164', title: 'Acendam a chama da sabedoria! Wiper, o guerreiro.', goyabuId: '42536', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c84199fe2.webp' },
+        { label: 'Episódio 165', title: 'Terra flutuante de ouro, Jaya! Para o Santuário de deus!', goyabuId: '42537', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c8edbce5e.webp' },
+        { label: 'Episódio 166', title: 'O festival da véspera do ouro! A estima pelo - Vearth!', goyabuId: '42538', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ca33bad9c.webp' },
+        { label: 'Episódio 167', title: 'Aparece o Deus Enel. luta pela sobrevivência.', goyabuId: '42539', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ca34965cb.webp' },
+        { label: 'Episódio 168', title: 'A Anaconda ataca! O jogo de sobrevivência começa!', goyabuId: '42540', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ca363a4c0.webp' },
+        { label: 'Episódio 169', title: 'A Ameaça de vida rejeitada! A determinação de Wiper, o demônio da guerra.', goyabuId: '42541', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1c8e9b7e7e.webp' },
+        { label: 'Episódio 170', title: 'A feroz batalha celeste! Pirata Zoro vs guerreiro Braham.', goyabuId: '42542', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cda9cb781.webp' },
+        { label: 'Episódio 171', title: 'Enorme bazuca de fogo! Luffy vs demônio da guerra Wiper.', goyabuId: '42543', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cdaa1a809.webp' },
+        { label: 'Episódio 172', title: 'A provação do pântano! Chopper vs sacerdote Gedatsu!', goyabuId: '42544', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cdab36e0e.webp' },
+        { label: 'Episódio 173', title: 'A habilidade invencível! O verdadeiro caráter de Enel revelado.', goyabuId: '42545', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cdacba7a3.webp' },
+        { label: 'Episódio 174', title: 'A cidade desaparecida! As magní­ficas ruí­nas de Shandora!', goyabuId: '42546', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cdadc9302.webp' },
+        { label: 'Episódio 175', title: 'Sobrevivência 0%! Chopper vs sacerdote Ohm.', goyabuId: '42547', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce1757972.webp' },
+        { label: 'Episódio 176', title: 'Escale o Giante Jack! Luta nas ruínas superiores.', goyabuId: '42548', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce22130ca.webp' },
+        { label: 'Episódio 177', title: 'O teste final da provação do ferro! Luta mortal na gaiola de espinhos brancos!', goyabuId: '42549', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce187260c.webp' },
+        { label: 'Episódio 178', title: 'Ataque da lâmina jorrante! Zoro vs sacerdote Ohm!', goyabuId: '42550', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce19cc115.webp' },
+        { label: 'Episódio 179', title: 'O desmoronamento das ruínas superiores! O quinteto final!', goyabuId: '42551', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce1b31e7d.webp' },
+        { label: 'Episódio 180', title: 'Batalha nas ruínas superiores! Desejo de Deus Enel!', goyabuId: '42552', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce806f401.webp' },
+        { label: 'Episódio 181', title: 'Ambição a Fairy Vearth. A arca, Maxim!', goyabuId: '42555', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce81424b9.webp' },
+        { label: 'Episódio 182', title: 'Confronto final! Pirata Luffy vs Deus Enel!', goyabuId: '42556', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cefca03c4.webp' },
+        { label: 'Episódio 183', title: 'Maxim se emerge! O começo de Deathpiea!', goyabuId: '42557', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1ce81f2087.webp' },
+        { label: 'Episódio 184', title: 'Luffy cai! O julgamento de deus e o desejo de Nami!', goyabuId: '42558', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cef9addc1.webp' },
+        { label: 'Episódio 185', title: 'Os dois acordaram! A linha de frente do amor ardente!', goyabuId: '42559', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cf2fd2150.webp' },
+        { label: 'Episódio 186', title: 'Capricho com a destruição. A iminente ruína da ilha do céu!', goyabuId: '42560', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cf30544fa.webp' },
+        { label: 'Episódio 187', title: 'Guiado pelo badalar do sino! O conto do grande guerreiro e o explorador.', goyabuId: '42561', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cf324ca6d.webp' },
+        { label: 'Episódio 188', title: 'Liberados da desgraça! As lágrimas do grande guerreiro!', goyabuId: '42562', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cf3271d85.webp' },
+        { label: 'Episódio 189', title: 'Amigos para sempre! O sino do juramento que badala pelo mar!', goyabuId: '42563', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cf337effb.webp' },
+        { label: 'Episódio 190', title: 'A destruição de Angel Island! Terror do raigou descendente!', goyabuId: '42564', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfa0e1c5a.webp' },
+        { label: 'Episódio 191', title: 'Derrubem Giant Jack! A última esperança de fuga.', goyabuId: '42565', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfa1176bb.webp' },
+        { label: 'Episódio 192', title: 'Milagre na terra de deus. A canção de amor ouvida pelos anjos.', goyabuId: '42566', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfa1b5a40.webp' },
+        { label: 'Episódio 193', title: 'A guerra chega a um fim! Badalando longe e amplamente a fantasia orgulhosa.', goyabuId: '42567', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfa2b60ea.webp' },
+        { label: 'Episódio 194', title: 'Eu vim aqui! O laço dos poneglyphs.', goyabuId: '42568', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfa40bd16.webp' },
+        { label: 'Episódio 195', title: 'O mar azul finalmente! Uma trama final com emoção.', goyabuId: '42569', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d01c9054e.webp' },
+        { label: 'Episódio 196', title: 'Estado de emergência proclamado! Infiltração do notório navio pirata!', goyabuId: '42570', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d01dda473.webp' },
+        { label: 'Episódio 197', title: 'Sanji o cozinheiro! Demonstração do seu real valor no refeitório da Marinha!', goyabuId: '42571', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfee07221.webp' },
+        { label: 'Episódio 198', title: 'Zoro é capturado. Operação urgente de Chopper!', goyabuId: '42572', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1cfec3d944.webp' },
+        { label: 'Episódio 199', title: 'A Busca dos marines se aproximando! O segundo a ser capturado!', goyabuId: '42573', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d0178881c.webp' },
+        { label: 'Episódio 200', title: 'O Grande plano de fuga! A determinação de Luffy e Sanji!', goyabuId: '42574', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d07996682.webp' },
+        { label: 'Episódio 201', title: 'A batalha na ponte! O esquadrão das almas ardentes ataca!', goyabuId: '42575', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d07c0124b.webp' },
+        { label: 'Episódio 202', title: 'O resgate do Going Merry! Atravessando as linhas inimigas!', goyabuId: '42576', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d07d2facf.webp' },
+        { label: 'Episódio 203', title: 'O navio pirata desaparece! Batalha na fortaleza, round 2!', goyabuId: '42577', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d07f1366a.webp' },
+        { label: 'Episódio 204', title: 'A operação para recuperar o ouro e a operação para recuperar o waver!', goyabuId: '42578', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d1d080054dc.webp' },
+        { label: 'Episódio 205', title: 'A estratégia secreta de vitória de Jonathan. O plano do rodeio pirata!', goyabuId: '42579', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62697e2a.webp' },
+        { label: 'Episódio 206', title: 'Adeus, fortaleza! A escapada final!', goyabuId: '42580', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62a686e6.webp' },
+        { label: 'Episódio 207', title: 'Long Ring Long Land. A grande corrida.', goyabuId: '42581', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62b74386.webp' },
+        { label: 'Episódio 208', title: 'Bando de piratas do Foxy e Davy Back!', goyabuId: '42582', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62c8b51b.webp' },
+        { label: 'Episódio 209', title: 'Primeiro round na Donut race!', goyabuId: '42583', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62d6a945.webp' },
+        { label: 'Episódio 210', title: 'Raposa prateada Foxy. Violenta sabotagem ofensiva!', goyabuId: '42584', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d627dcf13.webp' },
+        { label: 'Episódio 211', title: 'O segundo evento. Batendo no Groggy Ring.', goyabuId: '42585', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62947355.webp' },
+        { label: 'Episódio 212', title: 'Cartas Vermelhas Velozes Groggy Ring.', goyabuId: '42586', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d630c06ed.webp' },
+        { label: 'Episódio 213', title: 'O terceiro evento. Voltas e voltas no Roller Racer.', goyabuId: '42587', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62fdc268.webp' },
+        { label: 'Episódio 214', title: 'O clímax da corrida. Entrando no round final.', goyabuId: '42588', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d62ea9af1.webp' },
+        { label: 'Episódio 215', title: 'O ardente zumbido das bolas! É a dodgeball dos piratas!', goyabuId: '42589', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d6f05f2ad.webp' },
+        { label: 'Episódio 216', title: 'Uma batalha no desfiladeiro! A queda de Daruma-san!', goyabuId: '42590', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d6f1def73.webp' },
+        { label: 'Episódio 217', title: 'Confronto de capitães A última batalha: combate.', goyabuId: '42591', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d6f32624a.webp' },
+        { label: 'Episódio 218', title: 'Válvula de raios Noro Noro vs o invulnerável Afro-Luffy!', goyabuId: '42592', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d6f40c6ef.webp' },
+        { label: 'Episódio 219', title: 'Heroica luta em combate feroz o decisivo Final.', goyabuId: '42593', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d6f58ec87.webp' },
+        { label: 'Episódio 220', title: 'Você perdeu sua memória? Foi removida? Quem são vocês?', goyabuId: '42594', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d718dd7da.webp' },
+        { label: 'Episódio 221', title: 'O garoto misterioso da flauta e a dedução de Nico Robin.', goyabuId: '42595', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d71a30665.webp' },
+        { label: 'Episódio 222', title: 'Recuperação das memórias. O desembarque na ilha dos piratas.', goyabuId: '42596', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d71ee2f81.webp' },
+        { label: 'Episódio 223', title: 'Zoro afia seus caninos. Uma luta com um animal selvagem!', goyabuId: '42597', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d7204504b.webp' },
+        { label: 'Episódio 224', title: 'O contra ataque final do ladrão de memórias demonstra sua verdadeira natureza.', goyabuId: '42598', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d72193f65.webp' },
+        { label: 'Episódio 225', title: 'O homem de incrível orgulho Foxy, a raposa prateada!', goyabuId: '42599', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d78971ae7.webp' },
+        { label: 'Episódio 226', title: 'O Invencível poder está perto! Um homem muito perigoso!', goyabuId: '42600', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d78ae559a.webp' },
+        { label: 'Episódio 227', title: 'Almirante de base da Marinha, Aokiji! A ameaça mais poderosa.', goyabuId: '42601', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d78bbe156.webp' },
+        { label: 'Episódio 228', title: 'O embate entre gelo e borracha! Luffy vs Aokiji.', goyabuId: '42602', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d78cb449e.webp' },
+        { label: 'Episódio 229', title: 'O trem do oceano funcionando, a cidade das águas Water 7.', goyabuId: '42603', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d78d74b33.webp' },
+        { label: 'Episódio 230', title: 'A aventura nas cidade das águas! Objetivo estaleiro gigante!', goyabuId: '42604', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d86d4a8db.webp' },
+        { label: 'Episódio 231', title: 'A gangue de Franky e Iceburg.', goyabuId: '42605', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d86e10922.webp' },
+        { label: 'Episódio 232', title: 'Companhia Galley-La! A magnífica Doca 1.', goyabuId: '42606', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d86f649ce.webp' },
+        { label: 'Episódio 233', title: 'Sequestro Pirata! O navio pirata só espera a morte.', goyabuId: '42607', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8710af10.webp' },
+        { label: 'Episódio 234', title: 'Salvando um amigo! A incursão na Franky House.', goyabuId: '42608', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8722ca7d.webp' },
+        { label: 'Episódio 235', title: 'A grande luta a luz da lua! O navio pirata treme em tristeza!', goyabuId: '42609', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8bd04abf.webp' },
+        { label: 'Episódio 236', title: 'Luffy vs Usopp! O espírito dos homens colidindo.', goyabuId: '42610', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8bddf9f8.webp' },
+        { label: 'Episódio 237', title: 'A cidade da água está agitada! Iceburg-san foi atingido!', goyabuId: '42611', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8bec3598.webp' },
+        { label: 'Episódio 238', title: 'Homem borracha vs cyborg da respiração de fogo.', goyabuId: '42612', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8bfdbafb.webp' },
+        { label: 'Episódio 239', title: 'O criminosos são os Piratas do chapéu de palha? Os guarda-costas de Water 7.', goyabuId: '42613', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d8c115573.webp' },
+        { label: 'Episódio 240', title: 'Despedida eterna? A mulher que aguenta a escuridão, Nico Robin.', goyabuId: '42614', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d92ad76df.webp' },
+        { label: 'Episódio 241', title: 'Pegue Robin! Decisão da tripulação de Chapéu de palha.', goyabuId: '42615', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d92b343a3.webp' },
+        { label: 'Episódio 242', title: 'O sinal é a explosão! A CP9 começa a se mover.', goyabuId: '42616', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d92cd651c.webp' },
+        { label: 'Episódio 243', title: 'O CP9 desmascarado! Seu chocante rosto.', goyabuId: '42617', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d92e1669c.webp' },
+        { label: 'Episódio 244', title: 'O laço escondido! Iceburg e Franky!', goyabuId: '42618', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d92ee9021.webp' },
+        { label: 'Episódio 245', title: 'Volte Robin! Confronto contra a CP9.', goyabuId: '42619', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d9728e4f2.webp' },
+        { label: 'Episódio 246', title: 'Aniquilação dos Chapéu de palha? O terror do modelo leopardo!', goyabuId: '42620', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d9732711f.webp' },
+        { label: 'Episódio 247', title: 'O homem amado pelo navio! As lágrimas de Usopp!', goyabuId: '42621', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d97443e2e.webp' },
+        { label: 'Episódio 248', title: 'O passado de Franky! O dia que o Trem do oceano funcionou.', goyabuId: '42622', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d9751bd33.webp' },
+        { label: 'Episódio 249', title: 'Conspiração de Spandam! O dia em que o Trem do oceano balançou.', goyabuId: '42623', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2d97635e4b.webp' },
+        { label: 'Episódio 250', title: 'O fim do lendário homem! O dia que o Trem do oceano chorou.', goyabuId: '42624', thumb: 'https://goyabu.io/wp-content/uploads/2023/08/68d2da1235601.webp' },
+        { label: 'Episódio 251', title: 'A verdade por trás da traição! O sorriso sincero de Robin.', goyabuId: '47690', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2d9e940802.webp' },
+        { label: 'Episódio 252', title: 'O apito que separa os companheiros! O Trem do oceano corre.', goyabuId: '47691', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2da134687b.webp' },
+        { label: 'Episódio 253', title: 'Acusação do Sanji! A batalha do Trem do oceano na tempestade!', goyabuId: '47692', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2d9ea41350.webp' },
+        { label: 'Episódio 254', title: 'O grito da alma de Nami! Ressurreição de Luffy, o Chapéu de palha.', goyabuId: '47694', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2d9eba48a3.webp' },
+        { label: 'Episódio 255', title: 'Outro Trem do oceano? A saída de Rocketman.', goyabuId: '47696', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2da686aef3.webp' },
+        { label: 'Episódio 256', title: 'O resgate de nossos amigos! Os punhos que carregam a destruição para os inimigos.', goyabuId: '47697', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2da67a2fd5.webp' },
+        { label: 'Episódio 257', title: 'Cortando pela onda! Zoro e Luffy, o combo supremo.', goyabuId: '47699', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2da9b46fef.webp' },
+        { label: 'Episódio 258', title: 'Um homem misterioso aparece?! O nome dele é Sogeking!', goyabuId: '47700', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2da69bf699.webp' },
+        { label: 'Episódio 259', title: 'A batalha dos cozinheiros! Sanji vs Lamen kenpo.', goyabuId: '47701', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2da9a742d7.webp' },
+        { label: 'Episódio 260', title: 'Duelo no telhado! Franky vs Nero.', goyabuId: '47702', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dab297315.webp' },
+        { label: 'Episódio 261', title: 'Impacto demônio cortador Zoro vs cortador de navio T-bone.', goyabuId: '47703', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dab357ecc.webp' },
+        { label: 'Episódio 262', title: 'Robin resiste! O plano esperto de Sogeking!', goyabuId: '47704', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dab48d490.webp' },
+        { label: 'Episódio 263', title: 'A ilha do julgamento! A vista de Enies Lobby!', goyabuId: '47705', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dab5b38a2.webp' },
+        { label: 'Episódio 264', title: 'Iniciar plano de invasão! O avanço do grupo do Chapéu de palha!', goyabuId: '47706', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dab7077ba.webp' },
+        { label: 'Episódio 265', title: 'Investida de Luffy! Grande decisiva batalha na ilha judiciária!', goyabuId: '47707', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db27a915c.webp' },
+        { label: 'Episódio 266', title: 'Batalha com os gigantes! Abram a segunda porta!', goyabuId: '47708', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db289f566.webp' },
+        { label: 'Episódio 267', title: 'Os meios de escapar são liberados! Voa através do céu, Rocketman!', goyabuId: '47709', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db2935734.webp' },
+        { label: 'Episódio 268', title: 'Alcancem Luffy! A repentina guerra dos Chapéu de palha.', goyabuId: '47710', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db29efd9c.webp' },
+        { label: 'Episódio 269', title: 'Robin é traída! As expectativas do governo mundial.', goyabuId: '47711', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db2ce3352.webp' },
+        { label: 'Episódio 270', title: 'Devolva-nos Robin! Luffy vs Blueno.', goyabuId: '47712', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dbf9d8416.webp' },
+        { label: 'Episódio 271', title: 'Não parem! Levantem o sinal de um contra-ataque!', goyabuId: '47713', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db7243cfa.webp' },
+        { label: 'Episódio 272', title: 'Luffy à vista! Reunião na estação do tribunal!', goyabuId: '47714', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db737133a.webp' },
+        { label: 'Episódio 273', title: 'Tudo para proteger meus nakama! O gear second em movimento!', goyabuId: '47715', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2db743f730.webp' },
+        { label: 'Episódio 274', title: 'Responda-nos Robin! O clamor da equipe dos Chapéu de palha!', goyabuId: '47716', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dbd837575.webp' },
+        { label: 'Episódio 275', title: 'O passado de Robin! A garota que foi chamada de demônio!', goyabuId: '47717', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc046e3e4.webp' },
+        { label: 'Episódio 276', title: 'A mãe e a filha predestinadas! O nome da mãe é Olivia.', goyabuId: '47718', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc05d3744.webp' },
+        { label: 'Episódio 277', title: 'A tragédia de Ohara! O terror do Buster Call.', goyabuId: '47719', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc066a5ac.webp' },
+        { label: 'Episódio 278', title: 'Diga que você quer viver! Nós somos companheiros!', goyabuId: '47720', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc074f041.webp' },
+        { label: 'Episódio 279', title: 'Pulem no precipício! Os sentimentos de Luffy!', goyabuId: '47721', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2ddc90f411.webp' },
+        { label: 'Episódio 280', title: 'O jeito de viver de um homem! As técnicas de Zoro, e o sonho de Usopp.', goyabuId: '47722', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2ddc68afe8.webp' },
+        { label: 'Episódio 281', title: 'Lágrimas que criaram um laço entre Amigos! O mapa-múndi de Nami.', goyabuId: '47723', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2ddc6ee1e0.webp' },
+        { label: 'Episódio 282', title: 'Uma despedida fortalece um homem! Sanji e Chopper.', goyabuId: '47724', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2ddc7a4e89.webp' },
+        { label: 'Episódio 283', title: 'Tudo por um Amigo! A escuridão de Robin!', goyabuId: '47725', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc2cc55d4.webp' },
+        { label: 'Episódio 284', title: 'Eu não vou entregar as plantas! A decisão de Franky!', goyabuId: '47726', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc2d69afb.webp' },
+        { label: 'Episódio 285', title: 'Peguem as cinco chaves! Chapéus de palha contra CP9!', goyabuId: '47727', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc50788f5.webp' },
+        { label: 'Episódio 286', title: 'O poder da Akuma no Mi! Kaku e Jabura se transformam', goyabuId: '47728', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc54753eb.webp' },
+        { label: 'Episódio 287', title: 'Eu não chuto mesmo que eu morra! O código de honra de Sanji!', goyabuId: '47729', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc5200c90.webp' },
+        { label: 'Episódio 288', title: 'O erro de fukurou! A minha cola é a água da vida!', goyabuId: '47730', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc537d103.webp' },
+        { label: 'Episódio 289', title: 'A nova técnica do Zoro explode! O nome da katana é Sogeking?', goyabuId: '47732', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dc4f8f283.webp' },
+        { label: 'Episódio 290', title: 'Fora de controle! Rumble proibido de Chopper!', goyabuId: '47733', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de46ec00f.webp' },
+        { label: 'Episódio 291', title: 'O Retorno de Luffy Oyabun! Um Sonho ou bilhete premiado.', goyabuId: '47734', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de32de6a0.webp' },
+        { label: 'Episódio 292', title: 'A grande competição de mochi do castelo. O plano do Nariz vermelho.', goyabuId: '47736', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de338c00d.webp' },
+        { label: 'Episódio 293', title: 'Kalifa a mestra das bolhas! Nami se aproxima da armadilha de sabão!', goyabuId: '47737', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de34a8a71.webp' },
+        { label: 'Episódio 294', title: 'O escoar de más notícias! O Buster Call é acionado.', goyabuId: '47738', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de35db209.webp' },
+        { label: 'Episódio 295', title: '5 Namis? O contra ataque com miragens!', goyabuId: '47739', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de54bf63e.webp' },
+        { label: 'Episódio 296', title: 'A determinação de Nami! Atirem no Chopper furioso!', goyabuId: '47740', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de805b679.webp' },
+        { label: 'Episódio 297', title: 'Apresentando o caçador Sanji? O lamento do lobo mentiroso!', goyabuId: '47741', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de80d2e38.webp' },
+        { label: 'Episódio 298', title: 'O chute Flamejante! O banquete de chutes de Sanji!', goyabuId: '47742', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de81c1eba.webp' },
+        { label: 'Episódio 299', title: 'O furioso ataque do saque de espadas! Zoro vs Kaku: O incrível duelo cortante!', goyabuId: '47743', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2de5a9ebda.webp' },
+        { label: 'Episódio 300', title: 'Zoro, o deus da fúria! A reencarnação de Ashura mostrada por seu espírito!', goyabuId: '47744', thumb: 'https://goyabu.io/wp-content/uploads/2024/07/68d2dec7f1b43.webp' },
+        { label: 'Episódio 301', title: '', goyabuId: '47745', thumb: null },
+        { label: 'Episódio 302', title: '', goyabuId: '47746', thumb: null },
+        { label: 'Episódio 303', title: '', goyabuId: '47747', thumb: null },
+        { label: 'Episódio 304', title: '', goyabuId: '47748', thumb: null },
+        { label: 'Episódio 305', title: '', goyabuId: '47749', thumb: null },
+        { label: 'Episódio 306', title: '', goyabuId: '47750', thumb: null },
+        { label: 'Episódio 307', title: '', goyabuId: '47751', thumb: null },
+        { label: 'Episódio 308', title: '', goyabuId: '47752', thumb: null },
+        { label: 'Episódio 309', title: '', goyabuId: '47753', thumb: null },
+        { label: 'Episódio 310', title: '', goyabuId: '47754', thumb: null },
+        { label: 'Episódio 311', title: '', goyabuId: '47755', thumb: null },
+        { label: 'Episódio 312', title: '', goyabuId: '47756', thumb: null },
+        { label: 'Episódio 313', title: '', goyabuId: '47757', thumb: null },
+        { label: 'Episódio 314', title: '', goyabuId: '47758', thumb: null },
+        { label: 'Episódio 315', title: '', goyabuId: '47759', thumb: null },
+        { label: 'Episódio 316', title: '', goyabuId: '47760', thumb: null },
+        { label: 'Episódio 317', title: '', goyabuId: '47761', thumb: null },
+        { label: 'Episódio 318', title: '', goyabuId: '47762', thumb: null },
+        { label: 'Episódio 319', title: '', goyabuId: '47763', thumb: null },
+        { label: 'Episódio 320', title: '', goyabuId: '47764', thumb: null },
+        { label: 'Episódio 321', title: '', goyabuId: '47773', thumb: null },
+        { label: 'Episódio 322', title: '', goyabuId: '47774', thumb: null },
+        { label: 'Episódio 323', title: '', goyabuId: '47775', thumb: null },
+        { label: 'Episódio 324', title: '', goyabuId: '47776', thumb: null },
+        { label: 'Episódio 325', title: '', goyabuId: '47777', thumb: null },
+        { label: 'Episódio 326', title: '', goyabuId: '47778', thumb: null },
+        { label: 'Episódio 327', title: '', goyabuId: '47779', thumb: null },
+        { label: 'Episódio 328', title: '', goyabuId: '47780', thumb: null },
+        { label: 'Episódio 329', title: '', goyabuId: '47781', thumb: null },
+        { label: 'Episódio 330', title: '', goyabuId: '47782', thumb: null },
+        { label: 'Episódio 331', title: '', goyabuId: '47783', thumb: null },
+        { label: 'Episódio 332', title: '', goyabuId: '47784', thumb: null },
+        { label: 'Episódio 333', title: '', goyabuId: '47785', thumb: null },
+        { label: 'Episódio 334', title: '', goyabuId: '47786', thumb: null },
+        { label: 'Episódio 335', title: '', goyabuId: '47787', thumb: null },
+        { label: 'Episódio 336', title: '', goyabuId: '47788', thumb: null },
+        { label: 'Episódio 337', title: '', goyabuId: '47789', thumb: null },
+        { label: 'Episódio 338', title: '', goyabuId: '47790', thumb: null },
+        { label: 'Episódio 339', title: '', goyabuId: '47791', thumb: null },
+        { label: 'Episódio 340', title: '', goyabuId: '47792', thumb: null },
+        { label: 'Episódio 341', title: '', goyabuId: '47793', thumb: null },
+        { label: 'Episódio 342', title: '', goyabuId: '47794', thumb: null },
+        { label: 'Episódio 343', title: '', goyabuId: '47795', thumb: null },
+        { label: 'Episódio 344', title: '', goyabuId: '47796', thumb: null },
+        { label: 'Episódio 345', title: '', goyabuId: '47797', thumb: null },
+        { label: 'Episódio 346', title: '', goyabuId: '47798', thumb: null },
+        { label: 'Episódio 347', title: '', goyabuId: '47799', thumb: null },
+        { label: 'Episódio 348', title: '', goyabuId: '47800', thumb: null },
+        { label: 'Episódio 349', title: '', goyabuId: '47801', thumb: null },
+        { label: 'Episódio 350', title: '', goyabuId: '47802', thumb: null },
+        { label: 'Episódio 351', title: '', goyabuId: '47803', thumb: null },
+        { label: 'Episódio 352', title: '', goyabuId: '47804', thumb: null },
+        { label: 'Episódio 353', title: '', goyabuId: '47805', thumb: null },
+        { label: 'Episódio 354', title: '', goyabuId: '47806', thumb: null },
+        { label: 'Episódio 355', title: '', goyabuId: '47807', thumb: null },
+        { label: 'Episódio 356', title: '', goyabuId: '47808', thumb: null },
+        { label: 'Episódio 357', title: '', goyabuId: '47809', thumb: null },
+        { label: 'Episódio 358', title: '', goyabuId: '47810', thumb: null },
+        { label: 'Episódio 359', title: '', goyabuId: '47811', thumb: null },
+        { label: 'Episódio 360', title: '', goyabuId: '47812', thumb: null },
+        { label: 'Episódio 361', title: '', goyabuId: '47813', thumb: null },
+        { label: 'Episódio 362', title: '', goyabuId: '47814', thumb: null },
+        { label: 'Episódio 363', title: '', goyabuId: '47815', thumb: null },
+        { label: 'Episódio 364', title: '', goyabuId: '47816', thumb: null },
+        { label: 'Episódio 365', title: '', goyabuId: '47817', thumb: null },
+        { label: 'Episódio 366', title: '', goyabuId: '47818', thumb: null },
+        { label: 'Episódio 367', title: '', goyabuId: '47819', thumb: null },
+        { label: 'Episódio 368', title: '', goyabuId: '47820', thumb: null },
+        { label: 'Episódio 369', title: '', goyabuId: '47821', thumb: null },
+        { label: 'Episódio 370', title: '', goyabuId: '47822', thumb: null },
+        { label: 'Episódio 371', title: '', goyabuId: '47823', thumb: null },
+        { label: 'Episódio 372', title: '', goyabuId: '47824', thumb: null },
+        { label: 'Episódio 373', title: '', goyabuId: '47825', thumb: null },
+        { label: 'Episódio 374', title: '', goyabuId: '47826', thumb: null },
+        { label: 'Episódio 375', title: '', goyabuId: '47828', thumb: null },
+        { label: 'Episódio 376', title: '', goyabuId: '47829', thumb: null },
+        { label: 'Episódio 377', title: '', goyabuId: '47830', thumb: null },
+        { label: 'Episódio 378', title: '', goyabuId: '47831', thumb: null },
+        { label: 'Episódio 379', title: '', goyabuId: '47832', thumb: null },
+        { label: 'Episódio 380', title: '', goyabuId: '47834', thumb: null },
+        { label: 'Episódio 381', title: '', goyabuId: '47835', thumb: null },
+        { label: 'Episódio 382', title: '', goyabuId: '47836', thumb: null },
+        { label: 'Episódio 383', title: '', goyabuId: '47837', thumb: null },
+        { label: 'Episódio 384', title: '', goyabuId: '47838', thumb: null },
+        { label: 'Episódio 385', title: '', goyabuId: '47839', thumb: null },
+        { label: 'Episódio 386', title: '', goyabuId: '47840', thumb: null },
+        { label: 'Episódio 387', title: '', goyabuId: '47841', thumb: null },
+        { label: 'Episódio 388', title: '', goyabuId: '47842', thumb: null },
+        { label: 'Episódio 389', title: '', goyabuId: '47843', thumb: null },
+        { label: 'Episódio 390', title: '', goyabuId: '47844', thumb: null },
+        { label: 'Episódio 391', title: '', goyabuId: '47845', thumb: null },
+        { label: 'Episódio 392', title: '', goyabuId: '47846', thumb: null },
+        { label: 'Episódio 393', title: '', goyabuId: '47847', thumb: null },
+        { label: 'Episódio 394', title: '', goyabuId: '47848', thumb: null },
+        { label: 'Episódio 395', title: '', goyabuId: '47849', thumb: null },
+        { label: 'Episódio 396', title: '', goyabuId: '47850', thumb: null },
+        { label: 'Episódio 397', title: '', goyabuId: '47851', thumb: null },
+        { label: 'Episódio 398', title: '', goyabuId: '47852', thumb: null },
+        { label: 'Episódio 399', title: '', goyabuId: '47853', thumb: null },
+        { label: 'Episódio 400', title: '', goyabuId: '47854', thumb: null },
+        { label: 'Episódio 401', title: '', goyabuId: '47855', thumb: null },
+        { label: 'Episódio 402', title: '', goyabuId: '47856', thumb: null },
+        { label: 'Episódio 403', title: '', goyabuId: '47857', thumb: null },
+        { label: 'Episódio 404', title: '', goyabuId: '47858', thumb: null },
+        { label: 'Episódio 405', title: '', goyabuId: '47859', thumb: null },
+        { label: 'Episódio 406', title: '', goyabuId: '47861', thumb: null },
+        { label: 'Episódio 407', title: '', goyabuId: '47862', thumb: null },
+        { label: 'Episódio 408', title: '', goyabuId: '47863', thumb: null },
+        { label: 'Episódio 409', title: '', goyabuId: '47864', thumb: null },
+        { label: 'Episódio 410', title: '', goyabuId: '47865', thumb: null },
+        { label: 'Episódio 411', title: '', goyabuId: '47866', thumb: null },
+        { label: 'Episódio 412', title: '', goyabuId: '47867', thumb: null },
+        { label: 'Episódio 413', title: '', goyabuId: '47868', thumb: null },
+        { label: 'Episódio 414', title: '', goyabuId: '47869', thumb: null },
+        { label: 'Episódio 415', title: '', goyabuId: '47870', thumb: null },
+        { label: 'Episódio 416', title: '', goyabuId: '47871', thumb: null },
+        { label: 'Episódio 417', title: '', goyabuId: '47872', thumb: null },
+        { label: 'Episódio 418', title: '', goyabuId: '47873', thumb: null },
+        { label: 'Episódio 419', title: '', goyabuId: '47874', thumb: null },
+        { label: 'Episódio 420', title: '', goyabuId: '47875', thumb: null },
+        { label: 'Episódio 421', title: '', goyabuId: '47876', thumb: null },
+        { label: 'Episódio 422', title: '', goyabuId: '47877', thumb: null },
+        { label: 'Episódio 423', title: '', goyabuId: '47878', thumb: null },
+        { label: 'Episódio 424', title: '', goyabuId: '47879', thumb: null },
+        { label: 'Episódio 425', title: '', goyabuId: '47880', thumb: null },
+        { label: 'Episódio 426', title: '', goyabuId: '47881', thumb: null },
+        { label: 'Episódio 427', title: '', goyabuId: '47882', thumb: null },
+        { label: 'Episódio 428', title: '', goyabuId: '47885', thumb: null },
+        { label: 'Episódio 429', title: '', goyabuId: '47886', thumb: null },
+        { label: 'Episódio 430', title: '', goyabuId: '47887', thumb: null },
+        { label: 'Episódio 431', title: '', goyabuId: '47888', thumb: null },
+        { label: 'Episódio 432', title: '', goyabuId: '47889', thumb: null },
+        { label: 'Episódio 433', title: '', goyabuId: '47890', thumb: null },
+        { label: 'Episódio 434', title: '', goyabuId: '47891', thumb: null },
+        { label: 'Episódio 435', title: '', goyabuId: '47892', thumb: null },
+        { label: 'Episódio 436', title: '', goyabuId: '47893', thumb: null },
+        { label: 'Episódio 437', title: '', goyabuId: '47894', thumb: null },
+        { label: 'Episódio 438', title: '', goyabuId: '47895', thumb: null },
+        { label: 'Episódio 439', title: '', goyabuId: '47896', thumb: null },
+        { label: 'Episódio 440', title: '', goyabuId: '47897', thumb: null },
+        { label: 'Episódio 441', title: '', goyabuId: '47898', thumb: null },
+        { label: 'Episódio 442', title: '', goyabuId: '47899', thumb: null },
+        { label: 'Episódio 443', title: '', goyabuId: '47900', thumb: null },
+        { label: 'Episódio 444', title: '', goyabuId: '47901', thumb: null },
+        { label: 'Episódio 445', title: '', goyabuId: '47902', thumb: null },
+        { label: 'Episódio 446', title: '', goyabuId: '47903', thumb: null },
+        { label: 'Episódio 447', title: '', goyabuId: '47904', thumb: null },
+        { label: 'Episódio 448', title: '', goyabuId: '47905', thumb: null },
+        { label: 'Episódio 449', title: '', goyabuId: '47907', thumb: null },
+        { label: 'Episódio 450', title: '', goyabuId: '47909', thumb: null },
+        { label: 'Episódio 451', title: '', goyabuId: '47910', thumb: null },
+        { label: 'Episódio 452', title: '', goyabuId: '47912', thumb: null },
+        { label: 'Episódio 453', title: '', goyabuId: '47913', thumb: null },
+        { label: 'Episódio 454', title: '', goyabuId: '47914', thumb: null },
+        { label: 'Episódio 455', title: '', goyabuId: '47915', thumb: null },
+        { label: 'Episódio 456', title: '', goyabuId: '47916', thumb: null },
+        { label: 'Episódio 457', title: '', goyabuId: '47917', thumb: null },
+        { label: 'Episódio 458', title: '', goyabuId: '47918', thumb: null },
+        { label: 'Episódio 459', title: '', goyabuId: '47919', thumb: null },
+        { label: 'Episódio 460', title: '', goyabuId: '47920', thumb: null },
+        { label: 'Episódio 461', title: '', goyabuId: '47921', thumb: null },
+        { label: 'Episódio 462', title: '', goyabuId: '47922', thumb: null },
+        { label: 'Episódio 463', title: '', goyabuId: '47923', thumb: null },
+        { label: 'Episódio 464', title: '', goyabuId: '47924', thumb: null },
+        { label: 'Episódio 465', title: '', goyabuId: '47925', thumb: null },
+        { label: 'Episódio 466', title: '', goyabuId: '47926', thumb: null },
+        { label: 'Episódio 467', title: '', goyabuId: '47927', thumb: null },
+        { label: 'Episódio 468', title: '', goyabuId: '47928', thumb: null },
+        { label: 'Episódio 469', title: '', goyabuId: '47930', thumb: null },
+        { label: 'Episódio 470', title: '', goyabuId: '47931', thumb: null },
+        { label: 'Episódio 471', title: '', goyabuId: '47932', thumb: null },
+        { label: 'Episódio 472', title: '', goyabuId: '47933', thumb: null },
+        { label: 'Episódio 473', title: '', goyabuId: '47934', thumb: null },
+        { label: 'Episódio 474', title: '', goyabuId: '47935', thumb: null },
+        { label: 'Episódio 475', title: '', goyabuId: '47936', thumb: null },
+        { label: 'Episódio 476', title: '', goyabuId: '47938', thumb: null },
+        { label: 'Episódio 477', title: '', goyabuId: '47944', thumb: null },
+        { label: 'Episódio 478', title: '', goyabuId: '47945', thumb: null },
+        { label: 'Episódio 479', title: '', goyabuId: '47947', thumb: null },
+        { label: 'Episódio 480', title: '', goyabuId: '47949', thumb: null },
+        { label: 'Episódio 481', title: '', goyabuId: '47950', thumb: null },
+        { label: 'Episódio 482', title: '', goyabuId: '47951', thumb: null },
+        { label: 'Episódio 483', title: '', goyabuId: '47952', thumb: null },
+        { label: 'Episódio 484', title: '', goyabuId: '47953', thumb: null },
+        { label: 'Episódio 485', title: '', goyabuId: '47954', thumb: null },
+        { label: 'Episódio 486', title: '', goyabuId: '47955', thumb: null },
+        { label: 'Episódio 487', title: '', goyabuId: '47956', thumb: null },
+        { label: 'Episódio 488', title: '', goyabuId: '47957', thumb: null },
+        { label: 'Episódio 489', title: '', goyabuId: '47958', thumb: null },
+        { label: 'Episódio 490', title: '', goyabuId: '47959', thumb: null },
+        { label: 'Episódio 491', title: '', goyabuId: '47960', thumb: null },
+        { label: 'Episódio 492', title: '', goyabuId: '47961', thumb: null },
+        { label: 'Episódio 493', title: '', goyabuId: '47962', thumb: null },
+        { label: 'Episódio 494', title: '', goyabuId: '47963', thumb: null },
+        { label: 'Episódio 495', title: '', goyabuId: '47964', thumb: null },
+        { label: 'Episódio 496', title: '', goyabuId: '47965', thumb: null },
+        { label: 'Episódio 497', title: '', goyabuId: '47966', thumb: null },
+        { label: 'Episódio 498', title: '', goyabuId: '47967', thumb: null },
+        { label: 'Episódio 499', title: '', goyabuId: '47968', thumb: null },
+        { label: 'Episódio 500', title: '', goyabuId: '47971', thumb: null },
+        { label: 'Episódio 501', title: '', goyabuId: '47972', thumb: null },
+        { label: 'Episódio 502', title: '', goyabuId: '47973', thumb: null },
+        { label: 'Episódio 503', title: '', goyabuId: '47978', thumb: null },
+        { label: 'Episódio 504', title: '', goyabuId: '47980', thumb: null },
+        { label: 'Episódio 505', title: '', goyabuId: '47981', thumb: null },
+        { label: 'Episódio 506', title: '', goyabuId: '47982', thumb: null },
+        { label: 'Episódio 507', title: '', goyabuId: '47983', thumb: null },
+        { label: 'Episódio 508', title: '', goyabuId: '47984', thumb: null },
+        { label: 'Episódio 509', title: '', goyabuId: '47985', thumb: null },
+        { label: 'Episódio 510', title: '', goyabuId: '47986', thumb: null },
+        { label: 'Episódio 511', title: '', goyabuId: '47987', thumb: null },
+        { label: 'Episódio 512', title: '', goyabuId: '47988', thumb: null },
+        { label: 'Episódio 513', title: '', goyabuId: '47989', thumb: null },
+        { label: 'Episódio 514', title: '', goyabuId: '47990', thumb: null },
+        { label: 'Episódio 515', title: '', goyabuId: '47991', thumb: null },
+        { label: 'Episódio 516', title: '', goyabuId: '47992', thumb: null },
+        { label: 'Episódio 517', title: '', goyabuId: '47994', thumb: null },
+        { label: 'Episódio 518', title: '', goyabuId: '47996', thumb: null },
+        { label: 'Episódio 519', title: '', goyabuId: '47997', thumb: null },
+        { label: 'Episódio 520', title: '', goyabuId: '47998', thumb: null },
+        { label: 'Episódio 521', title: '', goyabuId: '47999', thumb: null },
+        { label: 'Episódio 522', title: '', goyabuId: '48000', thumb: null },
+        { label: 'Episódio 523', title: '', goyabuId: '48001', thumb: null },
+        { label: 'Episódio 524', title: '', goyabuId: '48002', thumb: null },
+        { label: 'Episódio 525', title: '', goyabuId: '48004', thumb: null },
+        { label: 'Episódio 526', title: '', goyabuId: '48005', thumb: null },
+        { label: 'Episódio 527', title: '', goyabuId: '48006', thumb: null },
+        { label: 'Episódio 528', title: '', goyabuId: '48007', thumb: null },
+        { label: 'Episódio 529', title: '', goyabuId: '48008', thumb: null },
+        { label: 'Episódio 530', title: '', goyabuId: '48009', thumb: null },
+        { label: 'Episódio 531', title: '', goyabuId: '48010', thumb: null },
+        { label: 'Episódio 532', title: '', goyabuId: '48011', thumb: null },
+        { label: 'Episódio 533', title: '', goyabuId: '48012', thumb: null },
+        { label: 'Episódio 534', title: '', goyabuId: '48013', thumb: null },
+        { label: 'Episódio 535', title: '', goyabuId: '48014', thumb: null },
+        { label: 'Episódio 536', title: '', goyabuId: '48015', thumb: null },
+        { label: 'Episódio 537', title: '', goyabuId: '48016', thumb: null },
+        { label: 'Episódio 538', title: '', goyabuId: '48017', thumb: null },
+        { label: 'Episódio 539', title: '', goyabuId: '48018', thumb: null },
+        { label: 'Episódio 540', title: '', goyabuId: '48019', thumb: null },
+        { label: 'Episódio 541', title: '', goyabuId: '48020', thumb: null },
+        { label: 'Episódio 542', title: '', goyabuId: '48022', thumb: null },
+        { label: 'Episódio 543', title: '', goyabuId: '48023', thumb: null },
+        { label: 'Episódio 544', title: '', goyabuId: '48026', thumb: null },
+        { label: 'Episódio 545', title: '', goyabuId: '48027', thumb: null },
+        { label: 'Episódio 546', title: '', goyabuId: '48028', thumb: null },
+        { label: 'Episódio 547', title: '', goyabuId: '48029', thumb: null },
+        { label: 'Episódio 548', title: '', goyabuId: '48030', thumb: null },
+        { label: 'Episódio 549', title: '', goyabuId: '48031', thumb: null },
+        { label: 'Episódio 550', title: '', goyabuId: '48032', thumb: null },
+        { label: 'Episódio 551', title: '', goyabuId: '48033', thumb: null },
+        { label: 'Episódio 552', title: '', goyabuId: '48034', thumb: null },
+        { label: 'Episódio 553', title: '', goyabuId: '48035', thumb: null },
+        { label: 'Episódio 554', title: '', goyabuId: '48036', thumb: null },
+        { label: 'Episódio 555', title: '', goyabuId: '48037', thumb: null },
+        { label: 'Episódio 556', title: '', goyabuId: '48038', thumb: null },
+        { label: 'Episódio 557', title: '', goyabuId: '48039', thumb: null },
+        { label: 'Episódio 558', title: '', goyabuId: '48040', thumb: null },
+        { label: 'Episódio 559', title: '', goyabuId: '48041', thumb: null },
+        { label: 'Episódio 560', title: '', goyabuId: '48042', thumb: null },
+        { label: 'Episódio 561', title: '', goyabuId: '48043', thumb: null },
+        { label: 'Episódio 562', title: '', goyabuId: '48044', thumb: null },
+        { label: 'Episódio 563', title: '', goyabuId: '48045', thumb: null },
+        { label: 'Episódio 564', title: '', goyabuId: '48046', thumb: null },
+        { label: 'Episódio 565', title: '', goyabuId: '48047', thumb: null },
+        { label: 'Episódio 566', title: '', goyabuId: '48048', thumb: null },
+        { label: 'Episódio 567', title: '', goyabuId: '48049', thumb: null },
+        { label: 'Episódio 568', title: '', goyabuId: '48050', thumb: null },
+        { label: 'Episódio 569', title: '', goyabuId: '48051', thumb: null },
+        { label: 'Episódio 570', title: '', goyabuId: '48052', thumb: null },
+        { label: 'Episódio 571', title: '', goyabuId: '48053', thumb: null },
+        { label: 'Episódio 572', title: '', goyabuId: '48054', thumb: null },
+        { label: 'Episódio 573', title: '', goyabuId: '48055', thumb: null },
+        { label: 'Episódio 574', title: '', goyabuId: '48077', thumb: null },
+        { label: 'Episódio 575', title: '', goyabuId: '49923', thumb: null },
+        { label: 'Episódio 576', title: '', goyabuId: '49924', thumb: null },
+        { label: 'Episódio 577', title: '', goyabuId: '49926', thumb: null },
+        { label: 'Episódio 578', title: '', goyabuId: '49927', thumb: null },
+        { label: 'Episódio 579', title: '', goyabuId: '49928', thumb: null },
+        { label: 'Episódio 580', title: '', goyabuId: '49929', thumb: null },
+        { label: 'Episódio 581', title: '', goyabuId: '49930', thumb: null },
+        { label: 'Episódio 582', title: '', goyabuId: '49931', thumb: null },
+        { label: 'Episódio 583', title: '', goyabuId: '49932', thumb: null },
+        { label: 'Episódio 584', title: '', goyabuId: '49933', thumb: null },
+        { label: 'Episódio 585', title: '', goyabuId: '49934', thumb: null },
+        { label: 'Episódio 586', title: '', goyabuId: '49935', thumb: null },
+        { label: 'Episódio 587', title: '', goyabuId: '49936', thumb: null },
+        { label: 'Episódio 588', title: '', goyabuId: '49937', thumb: null },
+        { label: 'Episódio 589', title: '', goyabuId: '49938', thumb: null },
+        { label: 'Episódio 590', title: '', goyabuId: '49940', thumb: null },
+        { label: 'Episódio 591', title: '', goyabuId: '49941', thumb: null },
+        { label: 'Episódio 592', title: '', goyabuId: '49942', thumb: null },
+        { label: 'Episódio 593', title: '', goyabuId: '49943', thumb: null },
+        { label: 'Episódio 594', title: '', goyabuId: '49944', thumb: null },
+        { label: 'Episódio 595', title: '', goyabuId: '49945', thumb: null },
+        { label: 'Episódio 596', title: '', goyabuId: '49946', thumb: null },
+        { label: 'Episódio 597', title: '', goyabuId: '49947', thumb: null },
+        { label: 'Episódio 598', title: '', goyabuId: '49948', thumb: null },
+        { label: 'Episódio 599', title: '', goyabuId: '49949', thumb: null },
+        { label: 'Episódio 600', title: '', goyabuId: '49950', thumb: null },
+        { label: 'Episódio 601', title: '', goyabuId: '49951', thumb: null },
+        { label: 'Episódio 602', title: '', goyabuId: '49952', thumb: null },
+        { label: 'Episódio 603', title: '', goyabuId: '49953', thumb: null },
+        { label: 'Episódio 604', title: '', goyabuId: '49954', thumb: null },
+        { label: 'Episódio 605', title: '', goyabuId: '49955', thumb: null },
+        { label: 'Episódio 606', title: '', goyabuId: '49956', thumb: null },
+        { label: 'Episódio 607', title: '', goyabuId: '49957', thumb: null },
+        { label: 'Episódio 608', title: '', goyabuId: '49958', thumb: null },
+        { label: 'Episódio 609', title: '', goyabuId: '49959', thumb: null },
+        { label: 'Episódio 610', title: '', goyabuId: '49962', thumb: null },
+        { label: 'Episódio 611', title: '', goyabuId: '49963', thumb: null },
+        { label: 'Episódio 612', title: '', goyabuId: '49964', thumb: null },
+        { label: 'Episódio 613', title: '', goyabuId: '49965', thumb: null },
+        { label: 'Episódio 614', title: '', goyabuId: '49966', thumb: null },
+        { label: 'Episódio 615', title: '', goyabuId: '49967', thumb: null },
+        { label: 'Episódio 616', title: '', goyabuId: '49968', thumb: null },
+        { label: 'Episódio 617', title: '', goyabuId: '49969', thumb: null },
+        { label: 'Episódio 618', title: '', goyabuId: '49970', thumb: null },
+        { label: 'Episódio 619', title: '', goyabuId: '49972', thumb: null },
+        { label: 'Episódio 620', title: '', goyabuId: '49973', thumb: null },
+        { label: 'Episódio 621', title: '', goyabuId: '49974', thumb: null },
+        { label: 'Episódio 622', title: '', goyabuId: '49975', thumb: null },
+        { label: 'Episódio 623', title: '', goyabuId: '49977', thumb: null },
+        { label: 'Episódio 624', title: '', goyabuId: '49978', thumb: null },
+        { label: 'Episódio 625', title: '', goyabuId: '49981', thumb: null },
+        { label: 'Episódio 626', title: '', goyabuId: '49982', thumb: null },
+        { label: 'Episódio 627', title: '', goyabuId: '49983', thumb: null },
+        { label: 'Episódio 628', title: '', goyabuId: '49985', thumb: null },
+        { label: 'Episódio 629', title: '', goyabuId: '51665', thumb: null },
+        { label: 'Episódio 630', title: '', goyabuId: '51666', thumb: null },
+        { label: 'Episódio 631', title: '', goyabuId: '51667', thumb: null },
+        { label: 'Episódio 632', title: '', goyabuId: '51668', thumb: null },
+        { label: 'Episódio 633', title: '', goyabuId: '51669', thumb: null },
+        { label: 'Episódio 634', title: '', goyabuId: '51670', thumb: null },
+        { label: 'Episódio 635', title: '', goyabuId: '51671', thumb: null },
+        { label: 'Episódio 636', title: '', goyabuId: '51672', thumb: null },
+        { label: 'Episódio 637', title: '', goyabuId: '51673', thumb: null },
+        { label: 'Episódio 638', title: '', goyabuId: '51674', thumb: null },
+        { label: 'Episódio 639', title: '', goyabuId: '51675', thumb: null },
+        { label: 'Episódio 640', title: '', goyabuId: '51676', thumb: null },
+        { label: 'Episódio 641', title: '', goyabuId: '51677', thumb: null },
+        { label: 'Episódio 642', title: '', goyabuId: '51678', thumb: null },
+        { label: 'Episódio 643', title: '', goyabuId: '51679', thumb: null },
+        { label: 'Episódio 644', title: '', goyabuId: '51680', thumb: null },
+        { label: 'Episódio 645', title: '', goyabuId: '51681', thumb: null },
+        { label: 'Episódio 646', title: '', goyabuId: '51682', thumb: null },
+        { label: 'Episódio 647', title: '', goyabuId: '51683', thumb: null },
+        { label: 'Episódio 648', title: '', goyabuId: '51684', thumb: null },
+        { label: 'Episódio 649', title: '', goyabuId: '51685', thumb: null },
+        { label: 'Episódio 650', title: '', goyabuId: '51686', thumb: null },
+        { label: 'Episódio 651', title: '', goyabuId: '51687', thumb: null },
+        { label: 'Episódio 652', title: '', goyabuId: '51689', thumb: null },
+        { label: 'Episódio 653', title: '', goyabuId: '51690', thumb: null },
+        { label: 'Episódio 654', title: '', goyabuId: '51691', thumb: null },
+        { label: 'Episódio 655', title: '', goyabuId: '51692', thumb: null },
+        { label: 'Episódio 656', title: '', goyabuId: '51693', thumb: null },
+        { label: 'Episódio 657', title: '', goyabuId: '51694', thumb: null },
+        { label: 'Episódio 658', title: '', goyabuId: '51695', thumb: null },
+        { label: 'Episódio 659', title: '', goyabuId: '51696', thumb: null },
+        { label: 'Episódio 660', title: '', goyabuId: '51697', thumb: null },
+        { label: 'Episódio 660', title: '', goyabuId: '51698', thumb: null },
+        { label: 'Episódio 661', title: '', goyabuId: '51701', thumb: null },
+        { label: 'Episódio 662', title: '', goyabuId: '51702', thumb: null },
+        { label: 'Episódio 663', title: '', goyabuId: '51703', thumb: null },
+        { label: 'Episódio 664', title: '', goyabuId: '51704', thumb: null },
+        { label: 'Episódio 665', title: '', goyabuId: '51705', thumb: null },
+        { label: 'Episódio 666', title: '', goyabuId: '51706', thumb: null },
+        { label: 'Episódio 667', title: '', goyabuId: '51707', thumb: null },
+        { label: 'Episódio 668', title: '', goyabuId: '51708', thumb: null },
+        { label: 'Episódio 669', title: '', goyabuId: '51709', thumb: null },
+        { label: 'Episódio 670', title: '', goyabuId: '51710', thumb: null },
+        { label: 'Episódio 671', title: '', goyabuId: '51711', thumb: null },
+        { label: 'Episódio 672', title: '', goyabuId: '51714', thumb: null },
+        { label: 'Episódio 673', title: '', goyabuId: '51715', thumb: null },
+        { label: 'Episódio 674', title: '', goyabuId: '51716', thumb: null },
+        { label: 'Episódio 675', title: '', goyabuId: '51717', thumb: null },
+        { label: 'Episódio 676', title: '', goyabuId: '51718', thumb: null },
+        { label: 'Episódio 677', title: '', goyabuId: '51720', thumb: null },
+        { label: 'Episódio 678', title: '', goyabuId: '51721', thumb: null },
+        { label: 'Episódio 679', title: '', goyabuId: '51723', thumb: null },
+        { label: 'Episódio 680', title: '', goyabuId: '51724', thumb: null },
+        { label: 'Episódio 681', title: '', goyabuId: '51725', thumb: null },
+        { label: 'Episódio 682', title: '', goyabuId: '51726', thumb: null },
+        { label: 'Episódio 683', title: '', goyabuId: '51727', thumb: null },
+        { label: 'Episódio 684', title: '', goyabuId: '51728', thumb: null },
+        { label: 'Episódio 685', title: '', goyabuId: '51729', thumb: null },
+        { label: 'Episódio 686', title: '', goyabuId: '51730', thumb: null },
+        { label: 'Episódio 687', title: '', goyabuId: '51731', thumb: null },
+        { label: 'Episódio 688', title: '', goyabuId: '51732', thumb: null },
+        { label: 'Episódio 689', title: '', goyabuId: '51733', thumb: null },
+        { label: 'Episódio 690', title: '', goyabuId: '51734', thumb: null },
+        { label: 'Episódio 691', title: '', goyabuId: '51736', thumb: null },
+        { label: 'Episódio 692', title: '', goyabuId: '51737', thumb: null },
+        { label: 'Episódio 693', title: '', goyabuId: '51738', thumb: null },
+        { label: 'Episódio 694', title: '', goyabuId: '51739', thumb: null },
+        { label: 'Episódio 695', title: '', goyabuId: '51740', thumb: null },
+        { label: 'Episódio 696', title: '', goyabuId: '51741', thumb: null },
+        { label: 'Episódio 697', title: '', goyabuId: '51742', thumb: null },
+        { label: 'Episódio 698', title: '', goyabuId: '51743', thumb: null },
+        { label: 'Episódio 699', title: '', goyabuId: '51744', thumb: null },
+        { label: 'Episódio 700', title: '', goyabuId: '51745', thumb: null },
+        { label: 'Episódio 701', title: '', goyabuId: '51746', thumb: null },
+        { label: 'Episódio 702', title: '', goyabuId: '51747', thumb: null },
+        { label: 'Episódio 703', title: '', goyabuId: '51748', thumb: null },
+        { label: 'Episódio 704', title: '', goyabuId: '51749', thumb: null },
+        { label: 'Episódio 705', title: '', goyabuId: '51750', thumb: null },
+        { label: 'Episódio 706', title: '', goyabuId: '51751', thumb: null },
+        { label: 'Episódio 707', title: '', goyabuId: '51753', thumb: null },
+        { label: 'Episódio 708', title: '', goyabuId: '51755', thumb: null },
+        { label: 'Episódio 709', title: '', goyabuId: '51756', thumb: null },
+        { label: 'Episódio 710', title: '', goyabuId: '51757', thumb: null },
+        { label: 'Episódio 711', title: '', goyabuId: '51758', thumb: null },
+        { label: 'Episódio 712', title: '', goyabuId: '51759', thumb: null },
+        { label: 'Episódio 713', title: '', goyabuId: '51760', thumb: null },
+        { label: 'Episódio 714', title: '', goyabuId: '51761', thumb: null },
+        { label: 'Episódio 715', title: '', goyabuId: '51762', thumb: null },
+        { label: 'Episódio 716', title: '', goyabuId: '51763', thumb: null },
+        { label: 'Episódio 717', title: '', goyabuId: '51764', thumb: null },
+        { label: 'Episódio 718', title: '', goyabuId: '51765', thumb: null },
+        { label: 'Episódio 719', title: '', goyabuId: '51766', thumb: null },
+        { label: 'Episódio 720', title: '', goyabuId: '51767', thumb: null },
+        { label: 'Episódio 721', title: '', goyabuId: '51768', thumb: null },
+        { label: 'Episódio 722', title: '', goyabuId: '51769', thumb: null },
+        { label: 'Episódio 723', title: '', goyabuId: '51770', thumb: null },
+        { label: 'Episódio 724', title: '', goyabuId: '51771', thumb: null },
+        { label: 'Episódio 725', title: '', goyabuId: '51772', thumb: null },
+        { label: 'Episódio 726', title: '', goyabuId: '51773', thumb: null },
+        { label: 'Episódio 727', title: '', goyabuId: '51774', thumb: null },
+        { label: 'Episódio 728', title: '', goyabuId: '51776', thumb: null },
+        { label: 'Episódio 729', title: '', goyabuId: '51777', thumb: null },
+        { label: 'Episódio 730', title: '', goyabuId: '51779', thumb: null },
+        { label: 'Episódio 731', title: '', goyabuId: '51780', thumb: null },
+        { label: 'Episódio 732', title: '', goyabuId: '51781', thumb: null },
+        { label: 'Episódio 733', title: '', goyabuId: '51782', thumb: null },
+        { label: 'Episódio 734', title: '', goyabuId: '51783', thumb: null },
+        { label: 'Episódio 735', title: '', goyabuId: '51784', thumb: null },
+        { label: 'Episódio 736', title: '', goyabuId: '51785', thumb: null },
+        { label: 'Episódio 737', title: '', goyabuId: '51786', thumb: null },
+        { label: 'Episódio 738', title: '', goyabuId: '51787', thumb: null },
+        { label: 'Episódio 739', title: '', goyabuId: '51788', thumb: null },
+        { label: 'Episódio 740', title: '', goyabuId: '51789', thumb: null },
+        { label: 'Episódio 741', title: '', goyabuId: '51790', thumb: null },
+        { label: 'Episódio 742', title: '', goyabuId: '51791', thumb: null },
+        { label: 'Episódio 743', title: '', goyabuId: '51792', thumb: null },
+        { label: 'Episódio 744', title: '', goyabuId: '51793', thumb: null },
+        { label: 'Episódio 745', title: '', goyabuId: '51794', thumb: null },
+        { label: 'Episódio 746', title: '', goyabuId: '51795', thumb: null },
+        { label: 'Episódio 747', title: '', goyabuId: '51796', thumb: null },
+        { label: 'Episódio 748', title: '', goyabuId: '51797', thumb: null },
+        { label: 'Episódio 749', title: '', goyabuId: '51798', thumb: null },
+        { label: 'Episódio 750', title: '', goyabuId: '51799', thumb: null },
+        { label: 'Episódio 751', title: '', goyabuId: '54978', thumb: null },
+        { label: 'Episódio 752', title: '', goyabuId: '54979', thumb: null },
+        { label: 'Episódio 753', title: '', goyabuId: '54980', thumb: null },
+        { label: 'Episódio 754', title: '', goyabuId: '54981', thumb: null },
+        { label: 'Episódio 755', title: '', goyabuId: '54982', thumb: null },
+        { label: 'Episódio 756', title: '', goyabuId: '54983', thumb: null },
+        { label: 'Episódio 757', title: '', goyabuId: '54984', thumb: null },
+        { label: 'Episódio 758', title: '', goyabuId: '54985', thumb: null },
+        { label: 'Episódio 759', title: '', goyabuId: '54986', thumb: null },
+        { label: 'Episódio 760', title: '', goyabuId: '54987', thumb: null },
+        { label: 'Episódio 761', title: '', goyabuId: '54988', thumb: null },
+        { label: 'Episódio 762', title: '', goyabuId: '54989', thumb: null },
+        { label: 'Episódio 763', title: '', goyabuId: '54990', thumb: null },
+        { label: 'Episódio 764', title: '', goyabuId: '54991', thumb: null },
+        { label: 'Episódio 765', title: '', goyabuId: '54992', thumb: null },
+        { label: 'Episódio 766', title: '', goyabuId: '54993', thumb: null },
+        { label: 'Episódio 767', title: '', goyabuId: '54995', thumb: null },
+        { label: 'Episódio 768', title: '', goyabuId: '54996', thumb: null },
+        { label: 'Episódio 769', title: '', goyabuId: '54997', thumb: null },
+        { label: 'Episódio 770', title: '', goyabuId: '54998', thumb: null },
+        { label: 'Episódio 771', title: '', goyabuId: '54999', thumb: null },
+        { label: 'Episódio 772', title: 'A jornada lendária. O cão, o gato e o Rei dos piratas.', goyabuId: '62509', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1c4784d00.webp' },
+        { label: 'Episódio 773', title: 'O retorno do pesadelo. O ataque violento do indestrutível Jack.', goyabuId: '62511', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1b56275cd.webp' },
+        { label: 'Episódio 774', title: 'A batalha pela defesa de Zou. Luffy e Zunisha!', goyabuId: '62513', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1b14d7edc.webp' },
+        { label: 'Episódio 775', title: 'Salvem o elefante gigante. O plano de resgate dos chapéus de palha!', goyabuId: '62515', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1ad4e728c.webp' },
+        { label: 'Episódio 776', title: 'Descendo do elefante. Zarpando para resgatar o Sanji!', goyabuId: '62517', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1a9ec14f2.webp' },
+        { label: 'Episódio 777', title: 'Para o Conselho Mundial. Princesa Vivi e princesa Shirahoshi.', goyabuId: '62519', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1a4e1f0c2.webp' },
+        { label: 'Episódio 778', title: 'Para o Conselho Mundial. Rebecca e o reino das sakuras.', goyabuId: '62521', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d19f9f1253.webp' },
+        { label: 'Episódio 779', title: 'Kaidou retorna. A ameaça para a Pior Geração se aproxima!', goyabuId: '62523', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d19b3e9ab5.webp' },
+        { label: 'Episódio 780', title: 'A frente de batalha faminta! Luffy e os supernovas da marinha!', goyabuId: '62525', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d197ee5770.webp' },
+        { label: 'Episódio 781', title: 'Os três implacáveis. A grande caçada aos chapéus de palha!', goyabuId: '62527', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d193c25a2b.webp' },
+        { label: 'Episódio 782', title: 'O punho do demônio. A luta final! Luffy vs Grant.', goyabuId: '62529', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d18dd92765.webp' },
+        { label: 'Episódio 783', title: 'Sanji volta para casa. Rumo ao território da Big Mom!', goyabuId: '62531', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d189edbf73.webp' },
+        { label: 'Episódio 784', title: '0 e 4. Encontro inesperado! Germa 66.', goyabuId: '62533', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1768c686b.webp' },
+        { label: 'Episódio 785', title: 'A crise do veneno mortal. Luffy e Reiju!', goyabuId: '62535', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d173a68883.webp' },
+        { label: 'Episódio 786', title: 'Totto Land! A yonkou Big Mom aparece.', goyabuId: '62537', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d16ed36ad0.webp' },
+        { label: 'Episódio 787', title: 'A filha da yonkou. A noiva de Sanji, Purin.', goyabuId: '62539', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d169e0c536.webp' },
+        { label: 'Episódio 788', title: 'O ataque titânico. O sofrimento de fome da mãe.', goyabuId: '62541', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d16591d932.webp' },
+        { label: 'Episódio 789', title: 'A capital em colapso? Big Mom e Jinbe.', goyabuId: '62543', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d161915125.webp' },
+        { label: 'Episódio 790', title: 'O castelo da yonkou. A chegada na ilha Whole Cake.', goyabuId: '62545', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d15dc3903b.webp' },
+        { label: 'Episódio 791', title: 'Uma floresta de doces. Luffy vs Luffy?', goyabuId: '62547', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d15a2bd68e.webp' },
+        { label: 'Episódio 792', title: 'Os assassinos da Mama. Luffy e o Bosque da Sedução!', goyabuId: '62549', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1551a01f2.webp' },
+        { label: 'Episódio 793', title: 'A Nação do Mar. O rei da Germa: Judge.', goyabuId: '62551', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d14f88eb18.webp' },
+        { label: 'Episódio 794', title: 'Confronto de pai e filho. Judge vs Sanji!', goyabuId: '62553', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1446eb265.webp' },
+        { label: 'Episódio 795', title: 'Uma ambição gigantesca. Big Mom e Caesar.', goyabuId: '62555', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d13c32144d.webp' },
+        { label: 'Episódio 796', title: 'O País das Almas. A temível habilidade da mãe!', goyabuId: '62557', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/690d1cfde2a53.webp' },
+        { label: 'Episódio 797', title: 'O grande comandante. Um dos três generais, Cracker, aparece.', goyabuId: '62559', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3e5f0d16a.webp' },
+        { label: 'Episódio 798', title: 'O inimigo de 800 milhões. Luffy vs Cracker dos Mil Braços.', goyabuId: '62561', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3e8133217.webp' },
+        { label: 'Episódio 799', title: 'Confronto de forças máximas. Gear 4 vs habilida da Bisu Bisu.', goyabuId: '62563', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3ee65f443.webp' },
+        { label: 'Episódio 800', title: '1 e 2. Reunião. A família Vinsmoke!', goyabuId: '62565', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3f123265b.webp' },
+        { label: 'Episódio 801', title: 'O salvador de uma vida. Sanji e Chef Zeff.', goyabuId: '62567', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3f3fcf818.webp' },
+        { label: 'Episódio 802', title: 'A fúria de Sanji. O segredo da Germa 66.', goyabuId: '62569', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3f5eabd77.webp' },
+        { label: 'Episódio 803', title: 'Abandonando o passado. Vinsmoke Sanji.', goyabuId: '62571', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3f8a7b40c.webp' },
+        { label: 'Episódio 804', title: 'Para o East Blue. A decisão da partida de Sanji.', goyabuId: '62573', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f3fabbc7ba.webp' },
+        { label: 'Episódio 805', title: 'A batalha de limites. Luffy e os biscoitos infinitos.', goyabuId: '62575', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f4041759e4.webp' },
+        { label: 'Episódio 806', title: 'O poder do estômago cheio. O novo Gear 4: Tankman!', goyabuId: '62577', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f4069660b7.webp' },
+        { label: 'Episódio 807', title: 'Uma luta triste. Luffy vs Sanji. (Parte 1)', goyabuId: '62579', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f409851fe9.webp' },
+        { label: 'Episódio 808', title: 'Uma luta triste. Luffy vs Sanji. (Parte 2)', goyabuId: '62581', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f41378a80c.webp' },
+        { label: 'Episódio 809', title: 'Uma tempestade de vingança. O ataque do Exército da Fúria!', goyabuId: '62583', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f416845016.webp' },
+        { label: 'Episódio 810', title: 'O fim da aventura. Sanji escolhe a proposta de casamento.', goyabuId: '62585', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f418ced025.webp' },
+        { label: 'Episódio 811', title: 'Vou esperá-lo aqui. Luffy vs Exército da Fúria!', goyabuId: '62587', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f41ac508fc.webp' },
+        { label: 'Episódio 812', title: 'Invadindo o chateau. Roubem! O road poneglyph.', goyabuId: '62589', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f41c9cb59b.webp' },
+        { label: 'Episódio 813', title: 'Encontro predestinado. Luffy e Big Mom!', goyabuId: '62591', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f41ead6070.webp' },
+        { label: 'Episódio 814', title: 'O grito da alma. O ataque relâmpago estratégico de Brook e Pedro.', goyabuId: '62593', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f423f4ed7c.webp' },
+        { label: 'Episódio 815', title: 'Adeus. As lágrimas da decisão da Purin.', goyabuId: '62595', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f425b3cc24.webp' },
+        { label: 'Episódio 816', title: 'A fatalidade dos olhos esquerdos. Pedro vs Barão Tamago', goyabuId: '62597', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f427791b70.webp' },
+        { label: 'Episódio 817', title: 'Cigarro molhado. Sanji e a véspera do casamento.', goyabuId: '62599', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f42984d9a0.webp' },
+        { label: 'Episódio 818', title: 'A alma indomável. Brook vs Big Mom.', goyabuId: '62601', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f42ccaf457.webp' },
+        { label: 'Episódio 819', title: 'O desejo de Sora. Sanji, o fracasso da Germa.', goyabuId: '62602', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f42e65dabb.webp' },
+        { label: 'Episódio 820', title: 'Para alcançar o Sanji. O grande contra-ataque repentino de Luffy.', goyabuId: '62605', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f43075a102.webp' },
+        { label: 'Episódio 821', title: 'Problemas no chateau. Luffy e a promessa do lugar prometido.', goyabuId: '62607', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f43345b09a.webp' },
+        { label: 'Episódio 822', title: 'Decidindo dizer adeus. Sanji e o bentô dos Chapéus de Palha', goyabuId: '62609', thumb: 'https://goyabu.io/wp-content/uploads/2025/12/692f435be0013.webp' },
+        { label: 'Episódio 823', title: 'Na cama com um yonkou. O grande plano de resgate do Brook!', goyabuId: '71626', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8c91a2208e.webp' },
+        { label: 'Episódio 824', title: 'No lugar da promessa. Luffy no limite do combate.', goyabuId: '71628', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ca9ac9795.webp' },
+        { label: 'Episódio 825', title: 'O mentiroso. Luffy e Sanji.', goyabuId: '71629', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cb7d83b2e.webp' },
+        { label: 'Episódio 826', title: 'O retorno de Sanji. Detonem! A infernal Festa do Chá.', goyabuId: '71631', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cba1b241a.webp' },
+        { label: 'Episódio 827', title: 'O encontro secreto. Luffy vs piratas Firetank.', goyabuId: '71633', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cbc88f569.webp' },
+        { label: 'Episódio 828', title: 'O acordo mortal. Luffy e o exército aliado de Bege.', goyabuId: '71635', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cc1e6c10c.webp' },
+        { label: 'Episódio 829', title: 'O plano secreto de Luffy. Antes das cortinas se abrirem! A conspiração da cerimônia de casamento.', goyabuId: '71638', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ccc451606.webp' },
+        { label: 'Episódio 830', title: 'Reunião de família. As cortinas se abrem! A infernal festa do chá.', goyabuId: '71639', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cd00c8645.webp' },
+        { label: 'Episódio 831', title: 'O casal faz de conta. A entrada de Sanji e Purin!', goyabuId: '71641', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cdd3abf6a.webp' },
+        { label: 'Episódio 832', title: 'O beijo da morte. Começa o plano de assassinato da yonkou!', goyabuId: '71643', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cdf6ee5d1.webp' },
+        { label: 'Episódio 833', title: 'Devolvendo o copo de saquê! O destemido Jinbei paga sua dívida.', goyabuId: '71646', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ce16e5f56.webp' },
+        { label: 'Episódio 834', title: 'O plano falhou? O contra-ataque dos piratas da Big Mom.', goyabuId: '71648', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ce38a7162.webp' },
+        { label: 'Episódio 835', title: 'Corra, Sanji. SOS! GERMA 66.', goyabuId: '71650', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ce649fc3e.webp' },
+        { label: 'Episódio 836', title: 'O segredo da Mãe. Elbaf a ilha dos gigantes e a pequena monstrinha.', goyabuId: '71652', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ce8d35c30.webp' },
+        { label: 'Episódio 837', title: 'O aniversário da Mãe. O dia que Carmel desapareceu.', goyabuId: '71653', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ceaa860d3.webp' },
+        { label: 'Episódio 838', title: 'Os lançadores explodem! O momento do assassinato da Big Mom.', goyabuId: '71655', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cec82ee56.webp' },
+        { label: 'Episódio 839', title: 'O exército do mal. Transformem-se! Germa 66.', goyabuId: '71658', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8ceef5647f.webp' },
+        { label: 'Episódio 840', title: 'Cortando relações de pai e filho. Sanji e Judge.', goyabuId: '71659', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cf0c6a083.webp' },
+        { label: 'Episódio 841', title: 'Escapando da festa do chá! Luffy vs Big Mom.', goyabuId: '71661', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8cf59643ac.webp' },
+        { label: 'Episódio 842', title: 'Começa a execução! A aniquilação das forças aliadas de Luffy?', goyabuId: '71663', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d04f53fc4.webp' },
+        { label: 'Episódio 843', title: 'O chateau desmorona. Começa a grande fuga dos Chapéus de Palha!', goyabuId: '71666', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d0d29465a.webp' },
+        { label: 'Episódio 844', title: 'A Lança de Elbaf. Investida! Big Mom corre pelos céus.', goyabuId: '71667', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d11d4cb86.webp' },
+        { label: 'Episódio 845', title: 'A decisão de Purin. O grande incêndio! Bosque da Sedução.', goyabuId: '71669', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d255b91df.webp' },
+        { label: 'Episódio 846', title: 'O contra-ataque do trovão. Nami e a nuvem trovejante Zeus.', goyabuId: '71671', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d2bf7532a.webp' },
+        { label: 'Episódio 847', title: 'Reencontro casual. Sanji e a paixão maligna da Purin.', goyabuId: '71673', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d396bead6.webp' },
+        { label: 'Episódio 848', title: 'Protegendo o Sunny. Batalha feroz! Chopper e Brook.', goyabuId: '71675', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d3c56e3a4.webp' },
+        { label: 'Episódio 849', title: 'Antes do amanhecer. Pedro, o líder dos guardiões.', goyabuId: '71678', thumb: 'https://goyabu.io/wp-content/uploads/2026/05/69f8d54c9167c.webp' },
+        { label: 'Episódio 850', title: 'Eu vou voltar. Luffy coloca sua vida em perigo na partida!', goyabuId: '72402', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286ac3631de.webp' },
+        { label: 'Episódio 851', title: 'O homem de um bilhão. Katakuri, o General da Doçura mais forte.', goyabuId: '72404', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286b0bbbd70.webp' },
+        { label: 'Episódio 852', title: 'Uma dura batalha começa. Luffy vs Katakuri.', goyabuId: '72405', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286b4c9c8a0.webp' },
+        { label: 'Episódio 853', title: 'O Salão Verde. O inigualável timoneiro Jinbe.', goyabuId: '72406', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286c4e1785c.webp' },
+        { label: 'Episódio 854', title: 'A ameaça do Mogura. A luta silenciosa de Luffy!', goyabuId: '72409', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286d28005a3.webp' },
+        { label: 'Episódio 855', title: 'O fim da batalha mortal? A ira de Katakuri desperta.', goyabuId: '72411', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286d68433bc.webp' },
+        { label: 'Episódio 856', title: 'O segredo proibido. A merienda do Katakuri.', goyabuId: '72413', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286d8dedaa5.webp' },
+        { label: 'Episódio 857', title: 'O contra-ataque de Luffy. A fraqueza da invencibilidade do Katakuri.', goyabuId: '72415', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286e6c169b6.webp' },
+        { label: 'Episódio 858', title: 'Novamente uma crise! Gear 4 vs Musou Donuts!', goyabuId: '72418', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286f5bdd484.webp' },
+        { label: 'Episódio 859', title: 'A filha traidora Chifon. O grande plano de transporte do bolo do Sanji.', goyabuId: '72419', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286f5e49ce8.webp' },
+        { label: 'Episódio 860', title: 'Atitude de homem. A decisão dos capitães Bege e Luffy.', goyabuId: '72420', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286f5f83543.webp' },
+        { label: 'Episódio 861', title: 'O bolo afundou? A batalha de fuga de Sanji e Bege.', goyabuId: '72421', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286f62750ca.webp' },
+        { label: 'Episódio 862', title: 'Sulong. A grande transformação misteriosa da Carrot.', goyabuId: '72425', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286f6437311.webp' },
+        { label: 'Episódio 863', title: 'Rompendo as linhas inimigas. A grande batalha naval dos Chapéus de Palha!', goyabuId: '72427', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286f67a68eb.webp' },
+        { label: 'Episódio 864', title: 'Finalmente o confronto. A yonkou vs Chapéus de Palha.', goyabuId: '72429', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fcc23fb5.webp' },
+        { label: 'Episódio 865', title: 'Compreendendo o Rei das Trevas. Começa a grande reviravolta contra o Katakuri.', goyabuId: '72432', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fcf6f15e.webp' },
+        { label: 'Episódio 866', title: 'Finalmente retornou. Sanji, o home que para um yonkou.', goyabuId: '72433', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fd07efeb.webp' },
+        { label: 'Episódio 867', title: 'Espreitando na escuridão. O ataque assassino no Luffy!', goyabuId: '72434', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fd614f27.webp' },
+        { label: 'Episódio 868', title: 'A determinação de um homem. O grande desafio de vida ou morte do Katakuri.', goyabuId: '72436', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fd76d8c8.webp' },
+        { label: 'Episódio 869', title: 'Desperte. Supera o mais forte haki da observação!', goyabuId: '72439', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a28701a168f5.webp' },
+        { label: 'Episódio 870', title: 'Os punhos da velocidade. O novo gear fourth é ativado!', goyabuId: '72441', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a28701b11146.webp' },
+        { label: 'Episódio 871', title: 'Finalmente a conclusão. O resultado da batalha feroz contra o Katakuri.', goyabuId: '72443', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fe2d0294.webp' },
+        { label: 'Episódio 872', title: 'Situação desesperadora. O cerco de ferro no Luffy!', goyabuId: '72446', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a28732e6d20d.webp' },
+        { label: 'Episódio 873', title: 'Revitalizados. O reforço poderoso da Germa!', goyabuId: '72447', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a287329e6623.webp' },
+        { label: 'Episódio 874', title: 'A última fortaleza. Os Piratas do Sol emergem!', goyabuId: '72448', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a287482709c6.webp' },
+        { label: 'Episódio 875', title: 'O sabor fascinante. O bolo abençoado do Sanji!', goyabuId: '72450', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a287321064e2.webp' },
+        { label: 'Episódio 876', title: 'O dever de um homem honrado. Jinbei está pronto para morrer no grande mar!', goyabuId: '72454', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a2873203709f.webp' },
+        { label: 'Episódio 877', title: 'Hora do arrependimento de despedida. O último desejo de Purin.', goyabuId: '72456', thumb: 'https://goyabu.io/wp-content/uploads/2026/06/6a286fdbaa9b6.webp' },
+      ],
+    },
+  ];
+
+  // ── Estado ─────────────────────────────────────────────────────────────────
+  let currentAnime = null;
+  let currentEp    = null;
+  let currentUser  = null;
+  let userHistory  = {}; // { [animeId_epId]: { progress, duration, updatedAt } }
+  let saveTimer    = null;
+
+  // ── Elementos ──────────────────────────────────────────────────────────────
+  const vCatalog       = document.getElementById('vCatalog');
+  const vEpisodes      = document.getElementById('vEpisodes');
+  const vPlayer        = document.getElementById('vPlayer');
+  const animeGrid      = document.getElementById('animeGrid');
+  const breadcrumb     = document.getElementById('breadcrumb');
+  const heroPoster     = document.getElementById('heroPoster');
+  const heroTitle      = document.getElementById('heroTitle');
+  const heroMeta       = document.getElementById('heroMeta');
+  const epGrid         = document.getElementById('epGrid');
+  const videoPlayer    = document.getElementById('videoPlayer');
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  const loadingMsg     = document.getElementById('loadingMsg');
+  const errorBox       = document.getElementById('errorBox');
+  const playerEpLabel  = document.getElementById('playerEpLabel');
+  const playerEpTitle  = document.getElementById('playerEpTitle');
+  const moreEpsList    = document.getElementById('moreEpsList');
+  const authArea       = document.getElementById('authArea');
+  const continueSection= document.getElementById('continueSection');
+  const continueCard   = document.getElementById('continueCard');
+
+  // ── Firebase Auth ──────────────────────────────────────────────────────────
+  // Aguarda o módulo Firebase carregar
+  function waitFb() {
+    return new Promise(resolve => {
+      const check = () => window._fb ? resolve(window._fb) : setTimeout(check, 50);
+      check();
+    });
+  }
+
+  async function initAuth() {
+    const fb = await waitFb();
+    fb.onAuthStateChanged(fb.auth, async user => {
+      currentUser = user;
+      renderAuthArea(user);
+      if (user) {
+        await loadHistory(user.uid);
+        renderContinueWatching();
+        if (currentAnime) refreshEpBadges();
+      } else {
+        userHistory = {};
+        continueSection.style.display = 'none';
+        if (currentAnime) refreshEpBadges();
+      }
+    });
+  }
+
+  function renderAuthArea(user) {
+    if (user) {
+      authArea.innerHTML = `
+        <img class="user-avatar" src="${user.photoURL || ''}" alt="${user.displayName}" title="${user.displayName}" id="userAvatar" />
+        <button class="btn-logout" id="btnLogout">Sair</button>
+      `;
+      document.getElementById('btnLogout').addEventListener('click', async () => {
+        const fb = await waitFb();
+        await fb.signOut(fb.auth);
+      });
+    } else {
+      authArea.innerHTML = `
+        <button class="btn-login" id="btnLogin">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+          </svg>
+          Entrar com Google
+        </button>
+      `;
+      document.getElementById('btnLogin').addEventListener('click', async () => {
+        const fb = await waitFb();
+        const provider = new fb.GoogleAuthProvider();
+        await fb.signInWithPopup(fb.auth, provider).catch(e => console.warn('Login cancelado', e.message));
+      });
+    }
+  }
+
+  // ── Firestore: histórico ───────────────────────────────────────────────────
+  function histKey(animeId, goyabuId) { return `${animeId}__${goyabuId}`; }
+
+  async function loadHistory(uid) {
+    const fb = await waitFb();
+    const snap = await fb.getDocs(fb.collection(fb.db, 'users', uid, 'history'));
+    userHistory = {};
+    snap.forEach(d => { userHistory[d.id] = d.data(); });
+  }
+
+  async function saveProgress(animeId, ep, currentTime, duration) {
+    if (!currentUser) return;
+    const fb  = await waitFb();
+    const key = histKey(animeId, ep.goyabuId);
+    const data = {
+      animeId, animeTitle: currentAnime.title,
+      epLabel: ep.label, epTitle: ep.title,
+      goyabuId: ep.goyabuId,
+      thumb: ep.thumb || null,
+      progress: currentTime,
+      duration: duration || 0,
+      updatedAt: Date.now(),
+    };
+    userHistory[key] = data;
+    await fb.setDoc(fb.doc(fb.db, 'users', currentUser.uid, 'history', key), data);
+  }
+
+  // ── Progresso nos cards ────────────────────────────────────────────────────
+  function getEpProgress(animeId, goyabuId) {
+    return userHistory[histKey(animeId, goyabuId)] || null;
+  }
+
+  function refreshEpBadges() {
+    if (!currentAnime) return;
+    currentAnime.episodes.forEach(ep => {
+      const card = document.querySelector(`[data-goyabu-id="${ep.goyabuId}"]`);
+      if (!card) return;
+      const hist = getEpProgress(currentAnime.id, ep.goyabuId);
+      applyBadge(card, hist);
+    });
+  }
+
+  function applyBadge(card, hist) {
+    card.querySelector('.ep-progress-bar')?.remove();
+    card.querySelector('.ep-watched-badge')?.remove();
+    if (!hist) return;
+    const pct = hist.duration > 0 ? (hist.progress / hist.duration) * 100 : 0;
+    const watched = pct > 90;
+    const wrap = card.querySelector('.ep-thumb-wrap');
+    if (watched) {
+      const badge = document.createElement('div');
+      badge.className = 'ep-watched-badge';
+      badge.textContent = '✓ Assistido';
+      wrap.appendChild(badge);
+    } else if (pct > 2) {
+      const bar = document.createElement('div');
+      bar.className = 'ep-progress-bar';
+      bar.style.width = pct + '%';
+      wrap.appendChild(bar);
+    }
+  }
+
+  // ── Continuar assistindo ───────────────────────────────────────────────────
+  function renderContinueWatching() {
+    // Pega o episódio mais recente com progresso > 2% e < 95%
+    const entries = Object.values(userHistory)
+      .filter(h => {
+        const pct = h.duration > 0 ? (h.progress / h.duration) * 100 : 0;
+        return pct > 2 && pct < 95;
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    if (entries.length === 0) {
+      continueSection.style.display = 'none';
+      return;
+    }
+
+    const last = entries[0];
+    const pct  = last.duration > 0 ? Math.round((last.progress / last.duration) * 100) : 0;
+    const remaining = last.duration > 0
+      ? formatTime(last.duration - last.progress) + ' restando'
+      : `${pct}% assistido`;
+
+    document.getElementById('continueThumb').src   = last.thumb || '';
+    document.getElementById('continueEpLabel').textContent = `${last.animeTitle} · ${last.epLabel}`;
+    document.getElementById('continueEpTitle').textContent = last.epTitle || '';
+    document.getElementById('continueSub').textContent     = remaining;
+
+    continueSection.style.display = 'block';
+    continueCard.onclick = () => {
+      const anime = CATALOG.find(a => a.id === last.animeId);
+      const ep    = anime?.episodes.find(e => e.goyabuId === last.goyabuId);
+      if (anime && ep) {
+        goToEpisodes(anime);
+        setTimeout(() => playEpisode(ep), 100);
+      }
+    };
+  }
+
+  function formatTime(secs) {
+    secs = Math.floor(secs);
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return `${m}m${s.toString().padStart(2,'0')}s`;
+  }
+
+  // ── Navegação ──────────────────────────────────────────────────────────────
+  function showView(view) {
+    [vCatalog, vEpisodes, vPlayer].forEach(v => {
+      v.classList.remove('active');
+      v.style.display = 'none';
+    });
+    view.style.display = '';
+    view.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function updateBreadcrumb(parts) {
+    if (parts.length === 0) {
+      breadcrumb.style.display = 'none';
+      breadcrumb.innerHTML = '';
+      return;
+    }
+    breadcrumb.style.display = 'flex';
+    const items = [];
+    items.push(`<span class="crumb-link" data-nav="catalog">Catálogo</span>`);
+    if (parts[0]) {
+      items.push(`<span class="sep">›</span>`);
+      if (parts[1]) {
+        items.push(`<span class="crumb-link" data-nav="episodes">${parts[0]}</span>`);
+        items.push(`<span class="sep">›</span>`);
+        items.push(`<span>${parts[1]}</span>`);
+      } else {
+        items.push(`<span>${parts[0]}</span>`);
+      }
+    }
+    breadcrumb.innerHTML = items.join('');
+    breadcrumb.querySelectorAll('[data-nav]').forEach(el => {
+      el.addEventListener('click', () => {
+        if (el.dataset.nav === 'catalog') goToCatalog();
+        if (el.dataset.nav === 'episodes') goToEpisodes(currentAnime);
+      });
+    });
+  }
+
+  function goToCatalog() {
+    videoPlayer.pause();
+    videoPlayer.src = '';
+    currentAnime = null;
+    currentEp    = null;
+    updateBreadcrumb([]);
+    renderContinueWatching();
+    showView(vCatalog);
+  }
+
+  function goToEpisodes(anime) {
+    videoPlayer.pause();
+    videoPlayer.src = '';
+    currentAnime = anime;
+    currentEp    = null;
+
+    heroPoster.src = anime.poster;
+    heroPoster.alt = anime.title;
+    heroTitle.textContent = anime.title;
+    heroMeta.textContent  = anime.description;
+
+    updateBreadcrumb([anime.title]);
+    showView(vEpisodes);
+
+    epGrid.innerHTML = '';
+    anime.episodes.forEach(ep => {
+      const card = document.createElement('div');
+      card.className = 'ep-card';
+      card.dataset.goyabuId = ep.goyabuId;
+      const thumbHtml = ep.thumb
+        ? `<img src="${ep.thumb}" alt="${ep.label}" loading="lazy" />`
+        : `<div class="ep-thumb-placeholder">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 4l16 8-16 8V4z"/>
+            </svg>
+          </div>`;
+      card.innerHTML = `
+        <div class="ep-thumb-wrap">
+          ${thumbHtml}
+          <div class="ep-play-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
+              <circle cx="12" cy="12" r="12" fill="rgba(0,0,0,0.55)"/>
+              <path d="M9.5 7.5l7 4.5-7 4.5V7.5z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="ep-info">
+          <div class="ep-number">${ep.label}</div>
+          <div class="ep-title">${ep.title || ''}</div>
+        </div>
+      `;
+      applyBadge(card, getEpProgress(anime.id, ep.goyabuId));
+      card.addEventListener('click', () => playEpisode(ep));
+      epGrid.appendChild(card);
+    });
+  }
+
+  async function playEpisode(ep) {
+    currentEp = ep;
+    updateBreadcrumb([currentAnime.title, ep.label]);
+
+    moreEpsList.innerHTML = '';
+    currentAnime.episodes.forEach(e => {
+      const pill = document.createElement('button');
+      pill.className = 'ep-pill' + (e === ep ? ' active' : '');
+      pill.textContent = e.label;
+      pill.addEventListener('click', () => { if (e !== currentEp) playEpisode(e); });
+      moreEpsList.appendChild(pill);
+    });
+
+    playerEpLabel.textContent = `${currentAnime.title} · ${ep.label}`;
+    playerEpTitle.textContent = ep.title || '';
+
+    errorBox.classList.remove('visible');
+    loadingMsg.textContent = 'Carregando episódio...';
+    loadingOverlay.classList.add('visible');
+    videoPlayer.style.opacity = '0';
+
+    showView(vPlayer);
+
+    try {
+      const res = await fetch(`${API}/api/stream?url=${encodeURIComponent(ep.goyabuId)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+
+      // Retoma do ponto salvo
+      const hist = getEpProgress(currentAnime.id, ep.goyabuId);
+      const resumeAt = (hist && hist.duration > 0 && (hist.progress / hist.duration) < 0.92)
+        ? hist.progress : 0;
+
+      videoPlayer.src = `${API}${data.url}`;
+      videoPlayer.style.opacity = '1';
+      loadingOverlay.classList.remove('visible');
+
+      videoPlayer.addEventListener('loadedmetadata', () => {
+        if (resumeAt > 5) videoPlayer.currentTime = resumeAt;
+        videoPlayer.play().catch(() => {});
+      }, { once: true });
+
+    } catch (err) {
+      loadingOverlay.classList.remove('visible');
+      errorBox.textContent = '⚠ ' + err.message;
+      errorBox.classList.add('visible');
+    }
+  }
+
+  // ── Salva progresso enquanto o vídeo toca ──────────────────────────────────
+  videoPlayer.addEventListener('timeupdate', () => {
+    if (!currentUser || !currentEp || !currentAnime) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveProgress(currentAnime.id, currentEp, videoPlayer.currentTime, videoPlayer.duration);
+      // Atualiza badge do episódio se a tela de episódios estiver visível
+      const card = document.querySelector(`[data-goyabu-id="${currentEp.goyabuId}"]`);
+      if (card) applyBadge(card, getEpProgress(currentAnime.id, currentEp.goyabuId));
+    }, 5000); // salva a cada 5s de progresso
+  });
+
+  // Salva imediatamente ao pausar ou fechar
+  videoPlayer.addEventListener('pause', () => {
+    if (!currentUser || !currentEp || !currentAnime) return;
+    clearTimeout(saveTimer);
+    saveProgress(currentAnime.id, currentEp, videoPlayer.currentTime, videoPlayer.duration);
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (currentUser && currentEp && currentAnime && videoPlayer.currentTime > 0) {
+      saveProgress(currentAnime.id, currentEp, videoPlayer.currentTime, videoPlayer.duration);
+    }
+  });
+
+  // ── Logo volta ao catálogo ─────────────────────────────────────────────────
+  document.getElementById('logoBtn').addEventListener('click', goToCatalog);
+
+  // ── Monta catálogo ─────────────────────────────────────────────────────────
+  CATALOG.forEach(anime => {
+    const card = document.createElement('div');
+    card.className = 'anime-card';
+    card.innerHTML = `
+      <img src="${anime.poster}" alt="${anime.title}" loading="lazy" />
+      <div class="anime-card-info">
+        <div class="anime-card-title">${anime.title}</div>
+        <div class="anime-card-meta">${anime.description}</div>
+      </div>
+    `;
+    card.addEventListener('click', () => goToEpisodes(anime));
+    animeGrid.appendChild(card);
+  });
+
+  // ── Inicia autenticação ────────────────────────────────────────────────────
+  initAuth();
+</script>
+</body>
+</html>
