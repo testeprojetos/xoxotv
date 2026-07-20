@@ -33,21 +33,25 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0d0d0f;
-      --surface: #16161a;
-      --surface2: #1e1e24;
-      --border: #2a2a35;
-      --accent: #7c3aed;
-      --accent-hover: #6d28d9;
-      --accent-glow: rgba(124, 58, 237, 0.35);
+      --bg: #090b12;
+      --surface: #131722;
+      --surface2: #1b2130;
+      --border: #2a3245;
+      --accent: #ff6b2c;
+      --accent-hover: #ff824f;
+      --accent-glow: rgba(255, 107, 44, 0.32);
+      --accent2: #22d3ee;
       --text: #e8e8f0;
-      --muted: #8888a0;
-      --radius: 10px;
+      --muted: #929bb0;
+      --radius: 12px;
     }
 
     html, body {
       min-height: 100%;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.09), transparent 28rem),
+        radial-gradient(circle at 88% 8%, rgba(255, 107, 44, 0.1), transparent 32rem),
+        var(--bg);
       color: var(--text);
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     }
@@ -69,7 +73,7 @@
       font-size: 1.35rem;
       font-weight: 700;
       letter-spacing: -0.5px;
-      background: linear-gradient(135deg, #a855f7, #7c3aed);
+      background: linear-gradient(135deg, #ffb347, var(--accent) 55%, #ff3d6e);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       cursor: pointer;
@@ -174,10 +178,32 @@
 
     /* Hero do anime */
     .anime-hero {
+      position: relative;
       display: flex;
       gap: 24px;
       align-items: flex-start;
       margin-bottom: 36px;
+      padding: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background:
+        linear-gradient(120deg, rgba(255,107,44,0.16), transparent 42%),
+        linear-gradient(300deg, rgba(34,211,238,0.11), transparent 45%),
+        var(--surface);
+      box-shadow: 0 18px 55px rgba(0,0,0,0.28);
+    }
+
+    .anime-hero::after {
+      content: '海賊王';
+      position: absolute;
+      right: 22px;
+      bottom: -24px;
+      color: rgba(255,255,255,0.035);
+      font-size: clamp(5rem, 12vw, 9rem);
+      font-weight: 900;
+      line-height: 1;
+      pointer-events: none;
     }
 
     .anime-hero-poster {
@@ -187,9 +213,12 @@
       border-radius: var(--radius);
       border: 1px solid var(--border);
       flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.45);
     }
 
-    .anime-hero-info { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+    .anime-hero-info { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; position: relative; z-index: 1; }
 
     .anime-hero-title {
       font-size: 1.8rem;
@@ -201,6 +230,153 @@
       font-size: 0.82rem;
       color: var(--muted);
     }
+
+    /* Seletor de arcos, inspirado na navegação por temporadas */
+    .episode-browser {
+      margin-bottom: 22px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.025), transparent), var(--surface);
+      overflow: hidden;
+    }
+
+    .episode-toolbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .arc-picker { flex: 1; min-width: 0; }
+
+    .arc-picker label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--accent2);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    .select-shell { position: relative; max-width: 570px; }
+
+    .select-shell::after {
+      content: '⌄';
+      position: absolute;
+      top: 50%;
+      right: 16px;
+      color: var(--accent);
+      font-size: 1.2rem;
+      font-weight: 800;
+      transform: translateY(-58%);
+      pointer-events: none;
+    }
+
+    .arc-select {
+      width: 100%;
+      appearance: none;
+      border: 1px solid #39435a;
+      border-radius: 10px;
+      outline: none;
+      background: #0d111b;
+      color: var(--text);
+      padding: 12px 48px 12px 14px;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 650;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .arc-select:hover,
+    .arc-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .arc-select option,
+    .arc-select optgroup { background: #111620; color: var(--text); }
+
+    .btn-all-episodes {
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface2);
+      color: var(--text);
+      padding: 11px 15px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, transform 0.15s;
+    }
+
+    .btn-all-episodes:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+    .btn-all-episodes:disabled { opacity: 0.45; cursor: default; transform: none; }
+
+    .arc-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 20px;
+    }
+
+    .arc-summary-main { min-width: 0; }
+
+    .saga-kicker {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--accent);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .arc-current-title { font-size: 1.1rem; line-height: 1.25; }
+    .arc-current-range { margin-top: 4px; color: var(--muted); font-size: 0.78rem; }
+
+    .episode-count {
+      flex-shrink: 0;
+      border-radius: 999px;
+      background: rgba(34,211,238,0.09);
+      border: 1px solid rgba(34,211,238,0.2);
+      color: var(--accent2);
+      padding: 6px 11px;
+      font-size: 0.74rem;
+      font-weight: 750;
+    }
+
+    .episode-pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 26px;
+    }
+
+    .page-btn {
+      min-width: 38px;
+      height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 0 11px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.15s;
+    }
+
+    .page-btn:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+    .page-btn.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .page-btn:disabled { opacity: 0.35; cursor: default; }
+    .page-ellipsis { color: var(--muted); padding: 0 2px; }
 
     /* Grid de episódios */
     .ep-grid {
@@ -426,8 +602,38 @@
       transition: background 0.15s, border-color 0.15s;
     }
 
-    .ep-pill:hover { border-color: var(--accent); background: rgba(124,58,237,0.12); }
+    .ep-pill:hover { border-color: var(--accent); background: rgba(255,107,44,0.12); }
     .ep-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+    .player-actions {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 10px;
+    }
+
+    .player-action-btn {
+      min-height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      font-weight: 750;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.15s;
+    }
+
+    .player-action-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: rgba(255,107,44,0.1);
+      transform: translateY(-1px);
+    }
+
+    .player-action-btn:disabled { opacity: 0.35; cursor: default; }
+    .player-action-btn.next { text-align: right; }
+    .player-action-btn.previous { text-align: left; }
+    .player-action-btn.list { color: var(--accent2); }
 
     /* Footer */
     footer {
@@ -444,9 +650,28 @@
       #vCatalog, #vEpisodes, #vPlayer { padding: 20px 16px 56px; }
       .anime-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
       .ep-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-      .anime-hero { flex-direction: column; }
+      .anime-hero { padding: 18px; }
       .anime-hero-poster { width: 90px; }
       .anime-hero-title { font-size: 1.4rem; }
+      .episode-toolbar { align-items: stretch; flex-direction: column; padding: 16px; }
+      .select-shell { max-width: none; }
+      .btn-all-episodes { width: 100%; }
+      .arc-summary { align-items: flex-start; padding: 14px 16px; }
+      .episode-count { white-space: nowrap; }
+      .player-actions { grid-template-columns: 1fr 1fr; }
+      .player-action-btn.list { grid-column: 1 / -1; grid-row: 2; }
+      .player-action-btn.next { text-align: center; }
+      .player-action-btn.previous { text-align: center; }
+    }
+
+    @media (max-width: 430px) {
+      .anime-hero { gap: 15px; }
+      .anime-hero-poster { width: 74px; }
+      .anime-hero-title { font-size: 1.2rem; }
+      .arc-current-title { font-size: 0.98rem; }
+      .arc-summary { flex-direction: column; gap: 10px; }
+      .episode-count { align-self: flex-start; }
+      .page-btn { min-width: 34px; height: 36px; padding: 0 9px; }
     }
 
     /* ── Auth ── */
@@ -622,8 +847,29 @@
       <p class="anime-hero-meta" id="heroMeta">—</p>
     </div>
   </div>
-  <p class="section-label">Episódios</p>
+
+  <div class="episode-browser">
+    <div class="episode-toolbar">
+      <div class="arc-picker">
+        <label for="arcSelect">Selecionar arco</label>
+        <div class="select-shell">
+          <select class="arc-select" id="arcSelect" aria-label="Selecionar arco de One Piece"></select>
+        </div>
+      </div>
+      <button class="btn-all-episodes" id="viewAllEpisodes" type="button">Ver todos os episódios</button>
+    </div>
+    <div class="arc-summary" aria-live="polite">
+      <div class="arc-summary-main">
+        <span class="saga-kicker" id="arcSagaLabel">Saga</span>
+        <h2 class="arc-current-title" id="arcCurrentTitle">Todos os episódios</h2>
+        <p class="arc-current-range" id="arcCurrentRange">—</p>
+      </div>
+      <span class="episode-count" id="episodeCount">— episódios</span>
+    </div>
+  </div>
+
   <div class="ep-grid" id="epGrid"></div>
+  <nav class="episode-pagination" id="episodePagination" aria-label="Paginação dos episódios"></nav>
 </div>
 
 <!-- ══ VIEW 3: PLAYER ══ -->
@@ -651,8 +897,14 @@
     </span>
   </div>
 
+  <div class="player-actions" aria-label="Navegação entre episódios">
+    <button class="player-action-btn previous" id="previousEpisode" type="button">← Episódio anterior</button>
+    <button class="player-action-btn list" id="backToEpisodeList" type="button">☰ Lista do arco</button>
+    <button class="player-action-btn next" id="nextEpisode" type="button">Próximo episódio →</button>
+  </div>
+
   <div>
-    <p class="more-eps-label">Outros episódios</p>
+    <p class="more-eps-label">Episódios próximos</p>
     <div class="more-eps-list" id="moreEpsList"></div>
   </div>
 </div>
@@ -1559,12 +1811,76 @@
     },
   ];
 
+  // Arcos exibidos no seletor. As faixas seguem a ordem de exibição do anime
+  // e incluem também os arcos especiais/filler presentes no catálogo.
+  const ONE_PIECE_ARCS = [
+    { id: 'romance-dawn',       name: 'Romance Dawn',                    saga: 'Saga East Blue',               start: 1,   end: 3 },
+    { id: 'orange-town',        name: 'Orange Town',                     saga: 'Saga East Blue',               start: 4,   end: 8 },
+    { id: 'syrup-village',      name: 'Vila Syrup',                      saga: 'Saga East Blue',               start: 9,   end: 18 },
+    { id: 'baratie',            name: 'Baratie',                         saga: 'Saga East Blue',               start: 19,  end: 30 },
+    { id: 'arlong-park',        name: 'Arlong Park',                     saga: 'Saga East Blue',               start: 31,  end: 45 },
+    { id: 'buggy-side-story',   name: 'História Paralela do Buggy',      saga: 'Saga East Blue',               start: 46,  end: 47 },
+    { id: 'loguetown',          name: 'Loguetown',                       saga: 'Saga East Blue',               start: 48,  end: 53 },
+    { id: 'warship-island',     name: 'Ilha dos Navios de Guerra',       saga: 'Saga East Blue',               start: 54,  end: 61 },
+
+    { id: 'reverse-mountain',   name: 'Reverse Mountain',                saga: 'Saga Arabasta',                start: 62,  end: 63 },
+    { id: 'whisky-peak',        name: 'Whisky Peak',                     saga: 'Saga Arabasta',                start: 64,  end: 67 },
+    { id: 'koby-helmeppo',      name: 'Koby e Helmeppo',                 saga: 'Saga Arabasta',                start: 68,  end: 69 },
+    { id: 'little-garden',      name: 'Little Garden',                   saga: 'Saga Arabasta',                start: 70,  end: 77 },
+    { id: 'drum-island',        name: 'Ilha de Drum',                    saga: 'Saga Arabasta',                start: 78,  end: 91 },
+    { id: 'arabasta',           name: 'Arabasta',                        saga: 'Saga Arabasta',                start: 92,  end: 130 },
+    { id: 'post-arabasta',      name: 'Pós-Arabasta',                    saga: 'Saga Arabasta',                start: 131, end: 135 },
+    { id: 'goat-island',        name: 'Ilha das Cabras',                 saga: 'Saga Arabasta',                start: 136, end: 138 },
+    { id: 'ruluka-island',      name: 'Ilha Ruluka',                     saga: 'Saga Arabasta',                start: 139, end: 143 },
+
+    { id: 'jaya',               name: 'Jaya',                            saga: 'Saga Ilha do Céu',             start: 144, end: 152 },
+    { id: 'skypiea',            name: 'Skypiea',                         saga: 'Saga Ilha do Céu',             start: 153, end: 195 },
+    { id: 'g8',                 name: 'G-8',                             saga: 'Saga Ilha do Céu',             start: 196, end: 206 },
+
+    { id: 'long-ring',          name: 'Long Ring Long Land',             saga: 'Saga Water 7',                 start: 207, end: 219 },
+    { id: 'oceans-dream',       name: 'Sonho do Oceano',                 saga: 'Saga Water 7',                 start: 220, end: 224 },
+    { id: 'foxy-return',        name: 'Retorno de Foxy',                 saga: 'Saga Water 7',                 start: 225, end: 226 },
+    { id: 'water-7',            name: 'Water 7',                         saga: 'Saga Water 7',                 start: 227, end: 263 },
+    { id: 'enies-lobby',        name: 'Enies Lobby',                     saga: 'Saga Water 7',                 start: 264, end: 312 },
+    { id: 'post-enies-lobby',   name: 'Pós-Enies Lobby',                 saga: 'Saga Water 7',                 start: 313, end: 325 },
+
+    { id: 'ice-hunter',         name: 'Caçadores de Gelo',               saga: 'Saga Thriller Bark',           start: 326, end: 336 },
+    { id: 'thriller-bark',      name: 'Thriller Bark',                   saga: 'Saga Thriller Bark',           start: 337, end: 381 },
+    { id: 'spa-island',         name: 'Ilha Spa',                        saga: 'Saga Thriller Bark',           start: 382, end: 384 },
+
+    { id: 'sabaody',            name: 'Arquipélago Sabaody',             saga: 'Saga Guerra de Marineford',    start: 385, end: 405 },
+    { id: 'historical-special', name: 'Especial Histórico de Luffy',     saga: 'Saga Guerra de Marineford',    start: 406, end: 407 },
+    { id: 'amazon-lily',        name: 'Amazon Lily',                     saga: 'Saga Guerra de Marineford',    start: 408, end: 421 },
+    { id: 'impel-down-1',       name: 'Impel Down — Parte 1',            saga: 'Saga Guerra de Marineford',    start: 422, end: 425 },
+    { id: 'little-east-blue',   name: 'Little East Blue',                saga: 'Saga Guerra de Marineford',    start: 426, end: 429 },
+    { id: 'impel-down-2',       name: 'Impel Down — Parte 2',            saga: 'Saga Guerra de Marineford',    start: 430, end: 456 },
+    { id: 'marineford',         name: 'Marineford',                      saga: 'Saga Guerra de Marineford',    start: 457, end: 489 },
+    { id: 'post-war',           name: 'Pós-Guerra',                      saga: 'Saga Guerra de Marineford',    start: 490, end: 516 },
+
+    { id: 'return-sabaody',     name: 'Retorno a Sabaody',               saga: 'Saga Ilha dos Homens-Peixe',   start: 517, end: 522 },
+    { id: 'fishman-island',     name: 'Ilha dos Homens-Peixe',           saga: 'Saga Ilha dos Homens-Peixe',   start: 523, end: 574 },
+
+    { id: 'z-ambition',         name: 'Ambição de Z',                    saga: 'Saga Dressrosa',               start: 575, end: 578 },
+    { id: 'punk-hazard',        name: 'Punk Hazard',                     saga: 'Saga Dressrosa',               start: 579, end: 625 },
+    { id: 'caesar-retrieval',   name: 'Resgate de Caesar',               saga: 'Saga Dressrosa',               start: 626, end: 628 },
+    { id: 'dressrosa',          name: 'Dressrosa',                       saga: 'Saga Dressrosa',               start: 629, end: 746 },
+
+    { id: 'silver-mine',        name: 'Mina de Prata',                   saga: 'Saga Whole Cake Island',       start: 747, end: 750 },
+    { id: 'zou',                name: 'Zou',                             saga: 'Saga Whole Cake Island',       start: 751, end: 779 },
+    { id: 'marine-rookie',      name: 'Supernovas da Marinha',           saga: 'Saga Whole Cake Island',       start: 780, end: 782 },
+    { id: 'whole-cake',         name: 'Whole Cake Island',               saga: 'Saga Whole Cake Island',       start: 783, end: 877 },
+  ];
+
   // ── Estado ─────────────────────────────────────────────────────────────────
   let currentAnime = null;
   let currentEp    = null;
   let currentUser  = null;
   let userHistory  = {}; // { [animeId_epId]: { progress, duration, updatedAt } }
   let saveTimer    = null;
+  let currentArcId = ONE_PIECE_ARCS[0].id;
+  let currentEpisodePage = 1;
+  const EPISODES_PER_PAGE = 24;
+  const episodeViewState = new Map();
 
   // ── Elementos ──────────────────────────────────────────────────────────────
   const vCatalog       = document.getElementById('vCatalog');
@@ -1576,6 +1892,13 @@
   const heroTitle      = document.getElementById('heroTitle');
   const heroMeta       = document.getElementById('heroMeta');
   const epGrid         = document.getElementById('epGrid');
+  const arcSelect      = document.getElementById('arcSelect');
+  const arcSagaLabel   = document.getElementById('arcSagaLabel');
+  const arcCurrentTitle= document.getElementById('arcCurrentTitle');
+  const arcCurrentRange= document.getElementById('arcCurrentRange');
+  const episodeCount   = document.getElementById('episodeCount');
+  const episodePagination = document.getElementById('episodePagination');
+  const viewAllEpisodes= document.getElementById('viewAllEpisodes');
   const videoPlayer    = document.getElementById('videoPlayer');
   const loadingOverlay = document.getElementById('loadingOverlay');
   const loadingMsg     = document.getElementById('loadingMsg');
@@ -1586,6 +1909,9 @@
   const authArea       = document.getElementById('authArea');
   const continueSection= document.getElementById('continueSection');
   const continueCard   = document.getElementById('continueCard');
+  const previousEpisode= document.getElementById('previousEpisode');
+  const nextEpisode    = document.getElementById('nextEpisode');
+  const backToEpisodeList = document.getElementById('backToEpisodeList');
 
   // ── Firebase Auth ──────────────────────────────────────────────────────────
   // Aguarda o módulo Firebase carregar
@@ -1784,6 +2110,174 @@
     });
   }
 
+  function getEpisodeNumber(ep) {
+    const match = ep.label.match(/\d+/);
+    return match ? Number(match[0]) : 0;
+  }
+
+  function getArcById(arcId) {
+    return ONE_PIECE_ARCS.find(arc => arc.id === arcId) || null;
+  }
+
+  function getArcForEpisode(ep) {
+    const number = getEpisodeNumber(ep);
+    return ONE_PIECE_ARCS.find(arc => number >= arc.start && number <= arc.end) || null;
+  }
+
+  function getEpisodesForArc(anime, arcId) {
+    if (arcId === 'all') return anime.episodes;
+    const arc = getArcById(arcId);
+    if (!arc) return anime.episodes;
+    return anime.episodes.filter(ep => {
+      const number = getEpisodeNumber(ep);
+      return number >= arc.start && number <= arc.end;
+    });
+  }
+
+  function buildArcSelect(anime) {
+    arcSelect.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = 'all';
+    allOption.textContent = `Todos os episódios · ${anime.episodes.length}`;
+    arcSelect.appendChild(allOption);
+
+    const sagas = [...new Set(ONE_PIECE_ARCS.map(arc => arc.saga))];
+    sagas.forEach(saga => {
+      const group = document.createElement('optgroup');
+      group.label = saga;
+      ONE_PIECE_ARCS.filter(arc => arc.saga === saga).forEach(arc => {
+        const count = getEpisodesForArc(anime, arc.id).length;
+        if (!count) return;
+        const option = document.createElement('option');
+        option.value = arc.id;
+        option.textContent = `${arc.name} · Episódios ${arc.start}–${arc.end} (${count})`;
+        group.appendChild(option);
+      });
+      if (group.children.length) arcSelect.appendChild(group);
+    });
+
+    arcSelect.value = currentArcId;
+  }
+
+  function createEpisodeCard(anime, ep) {
+    const card = document.createElement('div');
+    card.className = 'ep-card';
+    card.dataset.goyabuId = ep.goyabuId;
+    const thumbHtml = ep.thumb
+      ? `<img src="${ep.thumb}" alt="${ep.label}" loading="lazy" />`
+      : `<div class="ep-thumb-placeholder">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 4l16 8-16 8V4z"/>
+          </svg>
+        </div>`;
+    card.innerHTML = `
+      <div class="ep-thumb-wrap">
+        ${thumbHtml}
+        <div class="ep-play-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
+            <circle cx="12" cy="12" r="12" fill="rgba(0,0,0,0.55)"/>
+            <path d="M9.5 7.5l7 4.5-7 4.5V7.5z"/>
+          </svg>
+        </div>
+      </div>
+      <div class="ep-info">
+        <div class="ep-number">${ep.label}</div>
+        <div class="ep-title">${ep.title || 'Título não informado'}</div>
+      </div>
+    `;
+    applyBadge(card, getEpProgress(anime.id, ep.goyabuId));
+    card.addEventListener('click', () => playEpisode(ep));
+    return card;
+  }
+
+  function createPageButton(label, page, options = {}) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'page-btn' + (options.active ? ' active' : '');
+    button.textContent = label;
+    button.disabled = Boolean(options.disabled);
+    if (options.active) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => {
+      currentEpisodePage = page;
+      renderEpisodeGrid(true);
+    });
+    return button;
+  }
+
+  function renderPagination(totalPages) {
+    episodePagination.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    episodePagination.appendChild(createPageButton('← Anterior', currentEpisodePage - 1, {
+      disabled: currentEpisodePage === 1,
+    }));
+
+    const visiblePages = new Set([1, totalPages]);
+    for (let page = currentEpisodePage - 2; page <= currentEpisodePage + 2; page++) {
+      if (page > 0 && page <= totalPages) visiblePages.add(page);
+    }
+
+    let previousPage = 0;
+    [...visiblePages].sort((a, b) => a - b).forEach(page => {
+      if (page - previousPage > 1) {
+        const ellipsis = document.createElement('span');
+        ellipsis.className = 'page-ellipsis';
+        ellipsis.textContent = '…';
+        episodePagination.appendChild(ellipsis);
+      }
+      episodePagination.appendChild(createPageButton(String(page), page, {
+        active: page === currentEpisodePage,
+      }));
+      previousPage = page;
+    });
+
+    episodePagination.appendChild(createPageButton('Próxima →', currentEpisodePage + 1, {
+      disabled: currentEpisodePage === totalPages,
+    }));
+  }
+
+  function renderEpisodeGrid(scrollToTop = false) {
+    if (!currentAnime) return;
+    const selectedArc = getArcById(currentArcId);
+    const episodes = getEpisodesForArc(currentAnime, currentArcId);
+    const totalPages = Math.max(1, Math.ceil(episodes.length / EPISODES_PER_PAGE));
+    currentEpisodePage = Math.min(Math.max(1, currentEpisodePage), totalPages);
+
+    const startIndex = (currentEpisodePage - 1) * EPISODES_PER_PAGE;
+    const visibleEpisodes = episodes.slice(startIndex, startIndex + EPISODES_PER_PAGE);
+
+    arcSelect.value = currentArcId;
+    arcSagaLabel.textContent = selectedArc ? selectedArc.saga : 'Catálogo completo';
+    arcCurrentTitle.textContent = selectedArc ? selectedArc.name : 'Todos os episódios';
+    arcCurrentRange.textContent = selectedArc
+      ? `Episódios ${selectedArc.start}–${selectedArc.end} · Página ${currentEpisodePage} de ${totalPages}`
+      : `Exibindo ${startIndex + 1}–${Math.min(startIndex + EPISODES_PER_PAGE, episodes.length)} de ${episodes.length} · Página ${currentEpisodePage} de ${totalPages}`;
+    episodeCount.textContent = `${episodes.length} ${episodes.length === 1 ? 'episódio' : 'episódios'}`;
+    viewAllEpisodes.disabled = currentArcId === 'all';
+    viewAllEpisodes.textContent = currentArcId === 'all' ? 'Todos os episódios selecionados' : 'Ver todos os episódios';
+
+    epGrid.innerHTML = '';
+    visibleEpisodes.forEach(ep => epGrid.appendChild(createEpisodeCard(currentAnime, ep)));
+    renderPagination(totalPages);
+
+    episodeViewState.set(currentAnime.id, { arcId: currentArcId, page: currentEpisodePage });
+    if (scrollToTop) {
+      document.querySelector('.episode-browser').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  function showEpisodeInList(ep) {
+    const anime = currentAnime;
+    const arc = getArcForEpisode(ep);
+    currentArcId = arc?.id || 'all';
+    const episodes = getEpisodesForArc(anime, currentArcId);
+    const position = episodes.findIndex(item => item.goyabuId === ep.goyabuId);
+    currentEpisodePage = Math.floor(Math.max(0, position) / EPISODES_PER_PAGE) + 1;
+    episodeViewState.set(anime.id, { arcId: currentArcId, page: currentEpisodePage });
+    goToEpisodes(anime);
+  }
+
   function goToCatalog() {
     videoPlayer.pause();
     videoPlayer.src = '';
@@ -1808,45 +2302,40 @@
     updateBreadcrumb([anime.title]);
     showView(vEpisodes);
 
-    epGrid.innerHTML = '';
-    anime.episodes.forEach(ep => {
-      const card = document.createElement('div');
-      card.className = 'ep-card';
-      card.dataset.goyabuId = ep.goyabuId;
-      const thumbHtml = ep.thumb
-        ? `<img src="${ep.thumb}" alt="${ep.label}" loading="lazy" />`
-        : `<div class="ep-thumb-placeholder">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 4l16 8-16 8V4z"/>
-            </svg>
-          </div>`;
-      card.innerHTML = `
-        <div class="ep-thumb-wrap">
-          ${thumbHtml}
-          <div class="ep-play-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
-              <circle cx="12" cy="12" r="12" fill="rgba(0,0,0,0.55)"/>
-              <path d="M9.5 7.5l7 4.5-7 4.5V7.5z"/>
-            </svg>
-          </div>
-        </div>
-        <div class="ep-info">
-          <div class="ep-number">${ep.label}</div>
-          <div class="ep-title">${ep.title || ''}</div>
-        </div>
-      `;
-      applyBadge(card, getEpProgress(anime.id, ep.goyabuId));
-      card.addEventListener('click', () => playEpisode(ep));
-      epGrid.appendChild(card);
-    });
+    const savedView = episodeViewState.get(anime.id);
+    currentArcId = savedView?.arcId || ONE_PIECE_ARCS[0].id;
+    currentEpisodePage = savedView?.page || 1;
+    buildArcSelect(anime);
+    renderEpisodeGrid();
   }
 
   async function playEpisode(ep) {
     currentEp = ep;
     updateBreadcrumb([currentAnime.title, ep.label]);
 
+    const episodeIndex = currentAnime.episodes.findIndex(item => item.goyabuId === ep.goyabuId);
+    const previous = episodeIndex > 0 ? currentAnime.episodes[episodeIndex - 1] : null;
+    const next = episodeIndex >= 0 && episodeIndex < currentAnime.episodes.length - 1
+      ? currentAnime.episodes[episodeIndex + 1]
+      : null;
+
+    previousEpisode.disabled = !previous;
+    nextEpisode.disabled = !next;
+    previousEpisode.textContent = previous ? `← ${previous.label}` : '← Primeiro episódio';
+    nextEpisode.textContent = next ? `${next.label} →` : 'Último episódio →';
+    previousEpisode.onclick = () => { if (previous) playEpisode(previous); };
+    nextEpisode.onclick = () => { if (next) playEpisode(next); };
+    backToEpisodeList.onclick = () => showEpisodeInList(ep);
+
+    const episodeArc = getArcForEpisode(ep);
+    const nearbySource = episodeArc
+      ? getEpisodesForArc(currentAnime, episodeArc.id)
+      : currentAnime.episodes;
+    const nearbyIndex = nearbySource.findIndex(item => item.goyabuId === ep.goyabuId);
+    const nearbyStart = Math.max(0, nearbyIndex - 4);
+    const nearbyEnd = Math.min(nearbySource.length, nearbyIndex + 5);
     moreEpsList.innerHTML = '';
-    currentAnime.episodes.forEach(e => {
+    nearbySource.slice(nearbyStart, nearbyEnd).forEach(e => {
       const pill = document.createElement('button');
       pill.className = 'ep-pill' + (e === ep ? ' active' : '');
       pill.textContent = e.label;
@@ -1920,6 +2409,19 @@
 
   // ── Logo volta ao catálogo ─────────────────────────────────────────────────
   document.getElementById('logoBtn').addEventListener('click', goToCatalog);
+
+  arcSelect.addEventListener('change', () => {
+    currentArcId = arcSelect.value;
+    currentEpisodePage = 1;
+    renderEpisodeGrid();
+  });
+
+  viewAllEpisodes.addEventListener('click', () => {
+    currentArcId = 'all';
+    currentEpisodePage = 1;
+    arcSelect.value = 'all';
+    renderEpisodeGrid();
+  });
 
   // ── Monta catálogo ─────────────────────────────────────────────────────────
   CATALOG.forEach(anime => {
