@@ -424,6 +424,6 @@ app.get('/api/debug', async (req, res) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  console.log(`\n🎬 AnimePlayer rodando em http://localhost:${PORT}`);
+  console.log(`\n🎬 XoxôTV rodando em http://localhost:${PORT}`);
   console.log('   Pipeline: batchexecute → yt-dlp (fallback)\n');
 });

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AnimePlayer</title>
+  <title>XoxôTV</title>
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -79,24 +79,6 @@
       cursor: pointer;
       flex-shrink: 0;
     }
-
-    .breadcrumb {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.82rem;
-      color: var(--muted);
-      overflow: hidden;
-    }
-
-    .breadcrumb span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .breadcrumb .sep { opacity: 0.4; flex-shrink: 0; }
-    .breadcrumb .crumb-link {
-      cursor: pointer;
-      transition: color 0.15s;
-      white-space: nowrap;
-    }
-    .breadcrumb .crumb-link:hover { color: var(--text); }
 
     /* ── Views ── */
     .view { display: none; }
@@ -635,15 +617,6 @@
     .player-action-btn.previous { text-align: left; }
     .player-action-btn.list { color: var(--accent2); }
 
-    /* Footer */
-    footer {
-      padding: 20px 32px;
-      text-align: center;
-      font-size: 0.74rem;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
-
     /* Responsive */
     @media (max-width: 640px) {
       header { padding: 14px 16px; }
@@ -806,8 +779,7 @@
 <body>
 
 <header>
-  <div class="logo" id="logoBtn">AnimePlayer</div>
-  <nav class="breadcrumb" id="breadcrumb" style="display:none"></nav>
+  <div class="logo" id="logoBtn">XoxôTV</div>
   <div class="auth-area" id="authArea">
     <button class="btn-login" id="btnLogin">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -909,13 +881,12 @@
   </div>
 </div>
 
-<footer>AnimePlayer — apenas para uso pessoal</footer>
-
 <script>
   // ── URL base da API ────────────────────────────────────────────────────────
-  // Em produção aponta para o Railway. Em desenvolvimento usa localhost.
-  const API = window.location.hostname === 'localhost'
-    ? ''   // relativo → localhost:3000
+  // Em produção aponta para o Railway. Na porta 3000 usa o servidor local,
+  // inclusive quando outro aparelho acessa pelo IP da rede Wi-Fi.
+  const API = window.location.port === '3000'
+    ? ''   // relativo → mesmo computador que entregou esta página
     : 'https://animeplayer-production.up.railway.app'; // ← troque pela URL do Railway depois do deploy
 
   // ── Catálogo ───────────────────────────────────────────────────────────────
@@ -1887,7 +1858,6 @@
   const vEpisodes      = document.getElementById('vEpisodes');
   const vPlayer        = document.getElementById('vPlayer');
   const animeGrid      = document.getElementById('animeGrid');
-  const breadcrumb     = document.getElementById('breadcrumb');
   const heroPoster     = document.getElementById('heroPoster');
   const heroTitle      = document.getElementById('heroTitle');
   const heroMeta       = document.getElementById('heroMeta');
@@ -2082,34 +2052,6 @@
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
-  function updateBreadcrumb(parts) {
-    if (parts.length === 0) {
-      breadcrumb.style.display = 'none';
-      breadcrumb.innerHTML = '';
-      return;
-    }
-    breadcrumb.style.display = 'flex';
-    const items = [];
-    items.push(`<span class="crumb-link" data-nav="catalog">Catálogo</span>`);
-    if (parts[0]) {
-      items.push(`<span class="sep">›</span>`);
-      if (parts[1]) {
-        items.push(`<span class="crumb-link" data-nav="episodes">${parts[0]}</span>`);
-        items.push(`<span class="sep">›</span>`);
-        items.push(`<span>${parts[1]}</span>`);
-      } else {
-        items.push(`<span>${parts[0]}</span>`);
-      }
-    }
-    breadcrumb.innerHTML = items.join('');
-    breadcrumb.querySelectorAll('[data-nav]').forEach(el => {
-      el.addEventListener('click', () => {
-        if (el.dataset.nav === 'catalog') goToCatalog();
-        if (el.dataset.nav === 'episodes') goToEpisodes(currentAnime);
-      });
-    });
-  }
-
   function getEpisodeNumber(ep) {
     const match = ep.label.match(/\d+/);
     return match ? Number(match[0]) : 0;
@@ -2283,7 +2225,6 @@
     videoPlayer.src = '';
     currentAnime = null;
     currentEp    = null;
-    updateBreadcrumb([]);
     renderContinueWatching();
     showView(vCatalog);
   }
@@ -2299,7 +2240,6 @@
     heroTitle.textContent = anime.title;
     heroMeta.textContent  = anime.description;
 
-    updateBreadcrumb([anime.title]);
     showView(vEpisodes);
 
     const savedView = episodeViewState.get(anime.id);
@@ -2310,8 +2250,8 @@
   }
 
   async function playEpisode(ep) {
+    if (!videoPlayer.paused) videoPlayer.pause();
     currentEp = ep;
-    updateBreadcrumb([currentAnime.title, ep.label]);
 
     const episodeIndex = currentAnime.episodes.findIndex(item => item.goyabuId === ep.goyabuId);
     const previous = episodeIndex > 0 ? currentAnime.episodes[episodeIndex - 1] : null;
@@ -2350,6 +2290,7 @@
     loadingMsg.textContent = 'Carregando episódio...';
     loadingOverlay.classList.add('visible');
     videoPlayer.style.opacity = '0';
+    videoPlayer.poster = ep.thumb || currentAnime.poster;
 
     showView(vPlayer);
 
@@ -2372,7 +2313,6 @@
 
       videoPlayer.addEventListener('loadedmetadata', () => {
         if (resumeAt > 5) videoPlayer.currentTime = resumeAt;
-        videoPlayer.play().catch(() => {});
       }, { once: true });
 
     } catch (err) {

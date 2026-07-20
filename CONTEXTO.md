@@ -1,4 +1,4 @@
-# Contexto do Projeto — AnimePlayer
+# Contexto do Projeto — XoxôTV
 
 ## Objetivo
 Criar um site pessoal com player de vídeo que reproduz episódios do **Goyabu** (site de anime),
