@@ -7,20 +7,12 @@ const { execFile } = require('child_process');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const FIREBASE_API_KEY = 'AIzaSyBaHem45yqhV-V4CyBoqd4bF3-e5RjaCzU';
-const ALLOWED_EMAILS = new Set(
-  (process.env.ALLOWED_EMAILS || '')
-    .split(',')
-    .map(email => email.trim().toLowerCase())
-    .filter(Boolean)
-);
+const FIREBASE_PROJECT_ID = 'anime-326c0';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 if (!process.env.SESSION_SECRET) {
   console.warn('[auth] SESSION_SECRET ausente; as sessões serão invalidadas ao reiniciar.');
-}
-if (ALLOWED_EMAILS.size === 0) {
-  console.warn('[auth] ALLOWED_EMAILS vazio; nenhum usuário poderá entrar.');
 }
 
 // ─── CORS — permite GitHub Pages e localhost ──────────────────────────────────
@@ -146,7 +138,6 @@ function readSession(req) {
   try {
     const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!session.uid || !session.email || session.exp <= Date.now()) return null;
-    if (!ALLOWED_EMAILS.has(session.email.toLowerCase())) return null;
     return session;
   } catch (_) {
     return null;
@@ -167,12 +158,19 @@ async function verifyFirebaseToken(idToken) {
   return user;
 }
 
+async function isAuthorizedInFirestore(idToken, email) {
+  const documentUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}`
+    + `/databases/(default)/documents/authorizedEmails/${encodeURIComponent(email)}`;
+  const response = await httpGet(documentUrl, { Authorization: `Bearer ${idToken}` });
+  return response.status === 200;
+}
+
 app.post('/api/session', async (req, res) => {
   try {
     if (!req.body?.idToken) return res.status(400).json({ error: 'Token obrigatório' });
     const user = await verifyFirebaseToken(req.body.idToken);
     const email = user.email.toLowerCase();
-    if (!ALLOWED_EMAILS.has(email)) {
+    if (!await isAuthorizedInFirestore(req.body.idToken, email)) {
       console.warn(`[auth] Acesso negado para ${email}`);
       return res.status(403).json({ error: 'Esta conta não está autorizada.' });
     }

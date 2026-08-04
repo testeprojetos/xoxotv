@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // A lista é administrada somente pelo Console do Firebase.
+    // O usuário pode consultar apenas o documento do próprio e-mail.
+    match /authorizedEmails/{email} {
+      allow get: if request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email == email;
+      allow list, create, update, delete: if false;
+    }
+
+    // Cada usuário lê e grava somente o próprio histórico e apenas se estiver
+    // presente na lista de e-mails autorizados.
+    match /users/{userId}/history/{historyId} {
+      allow read, create, update, delete: if request.auth != null
+        && request.auth.uid == userId
+        && exists(/databases/$(database)/documents/authorizedEmails/$(request.auth.token.email));
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
