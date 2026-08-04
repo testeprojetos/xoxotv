@@ -1,10 +1,27 @@
 const express    = require('express');
 const https      = require('https');
 const path       = require('path');
+const crypto     = require('crypto');
 const { execFile } = require('child_process');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+const FIREBASE_API_KEY = 'AIzaSyBaHem45yqhV-V4CyBoqd4bF3-e5RjaCzU';
+const ALLOWED_EMAILS = new Set(
+  (process.env.ALLOWED_EMAILS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+if (!process.env.SESSION_SECRET) {
+  console.warn('[auth] SESSION_SECRET ausente; as sessões serão invalidadas ao reiniciar.');
+}
+if (ALLOWED_EMAILS.size === 0) {
+  console.warn('[auth] ALLOWED_EMAILS vazio; nenhum usuário poderá entrar.');
+}
 
 // ─── CORS — permite GitHub Pages e localhost ──────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -19,13 +36,15 @@ app.use((req, res, next) => {
   if (!origin || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+  if (origin) res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
+app.use(express.json({ limit: '8kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -69,6 +88,122 @@ function httpPost(url, body, headers = {}) {
     req.end();
   });
 }
+
+function httpPostJson(url, body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const payload = JSON.stringify(body);
+    const req = https.request({
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ─── Sessão e autorização ────────────────────────────────────────────────────
+
+function parseCookies(header = '') {
+  return Object.fromEntries(header.split(';').map(part => {
+    const index = part.indexOf('=');
+    if (index < 0) return ['', ''];
+    return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim())];
+  }).filter(([key]) => key));
+}
+
+function signSession(user) {
+  const payload = Buffer.from(JSON.stringify({
+    uid: user.localId,
+    email: user.email.toLowerCase(),
+    exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
+  })).toString('base64url');
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function readSession(req) {
+  const token = parseCookies(req.headers.cookie).xoxotv_session;
+  if (!token) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  const receivedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (receivedBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)) return null;
+  try {
+    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!session.uid || !session.email || session.exp <= Date.now()) return null;
+    if (!ALLOWED_EMAILS.has(session.email.toLowerCase())) return null;
+    return session;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function verifyFirebaseToken(idToken) {
+  const response = await httpPostJson(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+    { idToken }
+  );
+  if (response.status !== 200) throw new Error('Token do Firebase inválido');
+  const data = JSON.parse(response.body);
+  const user = data.users?.[0];
+  if (!user?.localId || !user?.email || user.emailVerified === false) {
+    throw new Error('Conta do Google não verificada');
+  }
+  return user;
+}
+
+app.post('/api/session', async (req, res) => {
+  try {
+    if (!req.body?.idToken) return res.status(400).json({ error: 'Token obrigatório' });
+    const user = await verifyFirebaseToken(req.body.idToken);
+    const email = user.email.toLowerCase();
+    if (!ALLOWED_EMAILS.has(email)) {
+      console.warn(`[auth] Acesso negado para ${email}`);
+      return res.status(403).json({ error: 'Esta conta não está autorizada.' });
+    }
+    const secure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const cookie = [
+      `xoxotv_session=${encodeURIComponent(signSession(user))}`,
+      'HttpOnly',
+      'SameSite=Strict',
+      'Path=/',
+      `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
+      secure ? 'Secure' : '',
+    ].filter(Boolean).join('; ');
+    res.setHeader('Set-Cookie', cookie);
+    res.json({ uid: user.localId, email: user.email, displayName: user.displayName || '' });
+  } catch (error) {
+    console.error('[auth] Falha ao criar sessão:', error.message);
+    res.status(401).json({ error: 'Não foi possível validar sua conta.' });
+  }
+});
+
+app.delete('/api/session', (req, res) => {
+  res.setHeader('Set-Cookie', 'xoxotv_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+  res.sendStatus(204);
+});
+
+app.use('/api', (req, res, next) => {
+  const session = readSession(req);
+  if (!session) return res.status(401).json({ error: 'Faça login para acessar.' });
+  req.user = session;
+  next();
+});
 
 // ─── Extrai ID/URL do episódio ────────────────────────────────────────────────
 

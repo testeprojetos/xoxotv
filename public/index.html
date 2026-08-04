@@ -695,6 +695,74 @@
 
     .btn-logout:hover { color: var(--text); background: var(--surface2); }
 
+    /* ── Tela de acesso ── */
+    body.auth-locked > header,
+    body.auth-locked > .view { display: none !important; }
+
+    .auth-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      overflow: auto;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(34, 211, 238, 0.13), transparent 30rem),
+        radial-gradient(circle at 85% 20%, rgba(255, 107, 44, 0.16), transparent 34rem),
+        #090b12;
+    }
+
+    .auth-gate[hidden] { display: none; }
+
+    .auth-card {
+      width: min(100%, 420px);
+      padding: 38px 32px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: linear-gradient(160deg, rgba(27, 33, 48, 0.97), rgba(13, 16, 26, 0.98));
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48), 0 0 48px rgba(255, 107, 44, 0.08);
+      text-align: center;
+    }
+
+    .auth-logo {
+      display: inline-block;
+      margin-bottom: 14px;
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      background: linear-gradient(135deg, #ffb347, var(--accent) 55%, #ff3d6e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .auth-title { font-size: 1.35rem; margin-bottom: 8px; }
+    .auth-copy { color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
+
+    .auth-gate-button {
+      width: 100%;
+      justify-content: center;
+      margin-top: 24px;
+      padding: 12px 18px;
+      font-size: 0.92rem;
+      background: #fff;
+      color: #202124;
+      border-color: #fff;
+    }
+
+    .auth-gate-button:hover { background: #f3f4f6; border-color: #f3f4f6; }
+    .auth-gate-button:disabled { opacity: 0.65; cursor: wait; }
+
+    .auth-status {
+      min-height: 22px;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .auth-status.error { color: #fca5a5; }
+
     /* ── Barra de progresso no card de episódio ── */
     .ep-progress-bar {
       position: absolute;
@@ -776,18 +844,26 @@
     }
   </style>
 </head>
-<body>
+<body class="auth-locked">
 
-<header>
-  <div class="logo" id="logoBtn">XoxôTV</div>
-  <div class="auth-area" id="authArea">
-    <button class="btn-login" id="btnLogin">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+<div class="auth-gate" id="authGate">
+  <div class="auth-card">
+    <div class="auth-logo">XoxôTV</div>
+    <h1 class="auth-title">Sua sessão começa aqui</h1>
+    <p class="auth-copy">Entre com uma conta autorizada para acessar o catálogo e manter seu histórico sincronizado.</p>
+    <button class="btn-login auth-gate-button" id="gateLoginBtn" type="button" hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
       </svg>
       Entrar com Google
     </button>
+    <p class="auth-status" id="authStatus" role="status">Verificando sua sessão...</p>
   </div>
+</div>
+
+<header>
+  <div class="logo" id="logoBtn">XoxôTV</div>
+  <div class="auth-area" id="authArea"></div>
 </header>
 
 <!-- ══ VIEW 1: CATÁLOGO ══ -->
@@ -1877,6 +1953,9 @@
   const playerEpTitle  = document.getElementById('playerEpTitle');
   const moreEpsList    = document.getElementById('moreEpsList');
   const authArea       = document.getElementById('authArea');
+  const authGate       = document.getElementById('authGate');
+  const authStatus     = document.getElementById('authStatus');
+  const gateLoginBtn   = document.getElementById('gateLoginBtn');
   const continueSection= document.getElementById('continueSection');
   const continueCard   = document.getElementById('continueCard');
   const previousEpisode= document.getElementById('previousEpisode');
@@ -1884,6 +1963,8 @@
   const backToEpisodeList = document.getElementById('backToEpisodeList');
 
   // ── Firebase Auth ──────────────────────────────────────────────────────────
+  let pendingAuthError = '';
+
   // Aguarda o módulo Firebase carregar
   function waitFb() {
     return new Promise(resolve => {
@@ -1895,19 +1976,73 @@
   async function initAuth() {
     const fb = await waitFb();
     fb.onAuthStateChanged(fb.auth, async user => {
-      currentUser = user;
-      renderAuthArea(user);
       if (user) {
-        await loadHistory(user.uid);
-        renderContinueWatching();
-        if (currentAnime) refreshEpBadges();
+        showAuthGate('Validando sua conta...', false, true);
+        try {
+          const idToken = await user.getIdToken();
+          const response = await fetch(`${API}/api/session`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Conta não autorizada.');
+
+          currentUser = user;
+          renderAuthArea(user);
+          try {
+            await loadHistory(user.uid);
+          } catch (error) {
+            console.warn('Não foi possível carregar o histórico:', error.message);
+            userHistory = {};
+          }
+          renderContinueWatching();
+          if (currentAnime) refreshEpBadges();
+          unlockApp();
+        } catch (error) {
+          pendingAuthError = error.message || 'Esta conta não está autorizada.';
+          currentUser = null;
+          await fb.signOut(fb.auth);
+        }
       } else {
+        currentUser = null;
+        renderAuthArea(null);
         userHistory = {};
         continueSection.style.display = 'none';
         if (currentAnime) refreshEpBadges();
+        const message = pendingAuthError || 'Entre com uma conta autorizada para continuar.';
+        showAuthGate(message, Boolean(pendingAuthError));
+        pendingAuthError = '';
       }
     });
   }
+
+  function showAuthGate(message, isError = false, isLoading = false) {
+    document.body.classList.add('auth-locked');
+    authGate.hidden = false;
+    authStatus.textContent = message;
+    authStatus.classList.toggle('error', isError);
+    gateLoginBtn.hidden = isLoading;
+    gateLoginBtn.disabled = isLoading;
+  }
+
+  function unlockApp() {
+    authGate.hidden = true;
+    document.body.classList.remove('auth-locked');
+  }
+
+  gateLoginBtn.addEventListener('click', async () => {
+    showAuthGate('Abrindo o Google...', false, true);
+    try {
+      const fb = await waitFb();
+      const provider = new fb.GoogleAuthProvider();
+      await fb.signInWithPopup(fb.auth, provider);
+    } catch (error) {
+      const cancelled = ['auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(error.code);
+      showAuthGate(cancelled ? 'Login cancelado.' : 'Não foi possível entrar com o Google.', !cancelled);
+    }
+  });
 
   function renderAuthArea(user) {
     if (user) {
@@ -1917,22 +2052,12 @@
       `;
       document.getElementById('btnLogout').addEventListener('click', async () => {
         const fb = await waitFb();
+        showAuthGate('Encerrando sessão...', false, true);
+        await fetch(`${API}/api/session`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
         await fb.signOut(fb.auth);
       });
     } else {
-      authArea.innerHTML = `
-        <button class="btn-login" id="btnLogin">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
-          </svg>
-          Entrar com Google
-        </button>
-      `;
-      document.getElementById('btnLogin').addEventListener('click', async () => {
-        const fb = await waitFb();
-        const provider = new fb.GoogleAuthProvider();
-        await fb.signInWithPopup(fb.auth, provider).catch(e => console.warn('Login cancelado', e.message));
-      });
+      authArea.innerHTML = '';
     }
   }
 
