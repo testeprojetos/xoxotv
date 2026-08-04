@@ -152,8 +152,8 @@ async function verifyFirebaseToken(idToken) {
   if (response.status !== 200) throw new Error('Token do Firebase inválido');
   const data = JSON.parse(response.body);
   const user = data.users?.[0];
-  if (!user?.localId || !user?.email || user.emailVerified === false) {
-    throw new Error('Conta do Google não verificada');
+  if (!user?.localId || !user?.email) {
+    throw new Error('Conta do Firebase inválida');
   }
   return user;
 }
