@@ -4,6 +4,7 @@ node_modules
 .vscode
 *.log
 *.png
+!public/icons/*.png
 result.txt
 decode.js
 scrape.js

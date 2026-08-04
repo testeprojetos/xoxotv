@@ -3,7 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ff6b2c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="XoxôTV" />
   <title>XoxôTV</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/favicon.PNG" type="image/png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -79,6 +86,25 @@
       cursor: pointer;
       flex-shrink: 0;
     }
+
+    .pwa-install-btn {
+      margin-left: auto;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 11px;
+      color: #fff;
+      background: rgba(255, 107, 44, 0.12);
+      border: 1px solid rgba(255, 107, 44, 0.5);
+      border-radius: 8px;
+      font-size: 0.76rem;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    .pwa-install-btn[hidden] { display: none; }
+    .pwa-install-btn:hover { background: rgba(255, 107, 44, 0.22); }
 
     /* ── Views ── */
     .view { display: none; }
@@ -759,12 +785,14 @@
 
     /* ── Auth ── */
     .auth-area {
-      margin-left: auto;
+      margin-left: 0;
       display: flex;
       align-items: center;
       gap: 10px;
       flex-shrink: 0;
     }
+
+    .pwa-install-btn[hidden] + .auth-area { margin-left: auto; }
 
     .btn-login {
       display: flex;
@@ -1015,6 +1043,12 @@
 
 <header>
   <div class="logo" id="logoBtn">XoxôTV</div>
+  <button class="pwa-install-btn" id="installAppButton" type="button" hidden>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/>
+    </svg>
+    Instalar app
+  </button>
   <div class="auth-area" id="authArea"></div>
 </header>
 
@@ -2105,6 +2139,7 @@
   let saveTimer    = null;
   let toastTimer   = null;
   let currentDownloadUrl = '';
+  let deferredInstallPrompt = null;
   let currentArcId = ONE_PIECE_ARCS[0].id;
   let currentEpisodePage = 1;
   const EPISODES_PER_PAGE = 24;
@@ -2151,6 +2186,7 @@
   const cancelDownload = document.getElementById('cancelDownload');
   const confirmDownload = document.getElementById('confirmDownload');
   const appToast = document.getElementById('appToast');
+  const installAppButton = document.getElementById('installAppButton');
 
   // ── Firebase Auth ──────────────────────────────────────────────────────────
   let pendingAuthError = '';
@@ -2803,6 +2839,43 @@
     arcSelect.value = 'all';
     renderEpisodeGrid();
   });
+
+  // ── Instalação PWA ────────────────────────────────────────────────────────
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+  const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    if (!isStandalone) installAppButton.hidden = false;
+  });
+
+  installAppButton.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installAppButton.hidden = true;
+      return;
+    }
+    if (isIos) showToast('No iPhone: Compartilhar → Adicionar à Tela de Início');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    installAppButton.hidden = true;
+    showToast('XoxôTV instalado com sucesso');
+  });
+
+  if (isIos && !isStandalone) installAppButton.hidden = false;
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .catch(error => console.warn('PWA indisponível:', error.message));
+    });
+  }
 
   // ── Monta catálogo ─────────────────────────────────────────────────────────
   CATALOG.forEach(anime => {
