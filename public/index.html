@@ -7,7 +7,7 @@
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
                                     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import { getFirestore, doc, setDoc, getDoc, collection, getDocs }
                                     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -26,7 +26,7 @@
     const db   = getFirestore(app);
 
     // ── Expõe para o script principal ────────────────────────────────────────
-    window._fb = { auth, db, GoogleAuthProvider, signInWithPopup, signOut,
+    window._fb = { auth, db, signInWithEmailAndPassword, signOut,
                    onAuthStateChanged, doc, setDoc, getDoc, collection, getDocs };
   </script>
   <style>
@@ -682,6 +682,15 @@
       flex-shrink: 0;
     }
 
+    .user-avatar-fallback {
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--accent), #ff3d6e);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
     .btn-logout {
       background: none;
       border: none;
@@ -739,18 +748,46 @@
     .auth-title { font-size: 1.35rem; margin-bottom: 8px; }
     .auth-copy { color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
 
+    .auth-form { margin-top: 24px; text-align: left; }
+
+    .auth-field { display: grid; gap: 7px; margin-bottom: 14px; }
+
+    .auth-field label {
+      color: #c7cddd;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .auth-field input {
+      width: 100%;
+      padding: 12px 13px;
+      color: var(--text);
+      background: #0d111b;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      font: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .auth-field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
     .auth-gate-button {
       width: 100%;
       justify-content: center;
-      margin-top: 24px;
+      margin-top: 4px;
       padding: 12px 18px;
       font-size: 0.92rem;
-      background: #fff;
-      color: #202124;
-      border-color: #fff;
+      background: linear-gradient(135deg, #ff824f, var(--accent));
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 700;
     }
 
-    .auth-gate-button:hover { background: #f3f4f6; border-color: #f3f4f6; }
+    .auth-gate-button:hover { background: linear-gradient(135deg, #ff9a70, #ff7740); }
     .auth-gate-button:disabled { opacity: 0.65; cursor: wait; }
 
     .auth-status {
@@ -851,12 +888,17 @@
     <div class="auth-logo">XoxôTV</div>
     <h1 class="auth-title">Sua sessão começa aqui</h1>
     <p class="auth-copy">Entre com uma conta autorizada para acessar o catálogo e manter seu histórico sincronizado.</p>
-    <button class="btn-login auth-gate-button" id="gateLoginBtn" type="button" hidden>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
-      </svg>
-      Entrar com Google
-    </button>
+    <form class="auth-form" id="authForm" hidden>
+      <div class="auth-field">
+        <label for="loginEmail">E-mail</label>
+        <input id="loginEmail" name="email" type="email" autocomplete="username" required />
+      </div>
+      <div class="auth-field">
+        <label for="loginPassword">Senha</label>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn-login auth-gate-button" id="gateLoginBtn" type="submit">Entrar</button>
+    </form>
     <p class="auth-status" id="authStatus" role="status">Verificando sua sessão...</p>
   </div>
 </div>
@@ -1955,7 +1997,10 @@
   const authArea       = document.getElementById('authArea');
   const authGate       = document.getElementById('authGate');
   const authStatus     = document.getElementById('authStatus');
+  const authForm       = document.getElementById('authForm');
   const gateLoginBtn   = document.getElementById('gateLoginBtn');
+  const loginEmail     = document.getElementById('loginEmail');
+  const loginPassword  = document.getElementById('loginPassword');
   const continueSection= document.getElementById('continueSection');
   const continueCard   = document.getElementById('continueCard');
   const previousEpisode= document.getElementById('previousEpisode');
@@ -2023,7 +2068,7 @@
     authGate.hidden = false;
     authStatus.textContent = message;
     authStatus.classList.toggle('error', isError);
-    gateLoginBtn.hidden = isLoading;
+    authForm.hidden = isLoading;
     gateLoginBtn.disabled = isLoading;
   }
 
@@ -2032,25 +2077,51 @@
     document.body.classList.remove('auth-locked');
   }
 
-  gateLoginBtn.addEventListener('click', async () => {
-    showAuthGate('Abrindo o Google...', false, true);
+  authForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value;
+    if (!email || !password) return;
+
+    showAuthGate('Validando e-mail e senha...', false, true);
     try {
       const fb = await waitFb();
-      const provider = new fb.GoogleAuthProvider();
-      await fb.signInWithPopup(fb.auth, provider);
+      await fb.signInWithEmailAndPassword(fb.auth, email, password);
+      loginPassword.value = '';
     } catch (error) {
-      const cancelled = ['auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(error.code);
-      showAuthGate(cancelled ? 'Login cancelado.' : 'Não foi possível entrar com o Google.', !cancelled);
+      loginPassword.value = '';
+      const invalidCredentials = [
+        'auth/invalid-credential',
+        'auth/user-not-found',
+        'auth/wrong-password',
+        'auth/invalid-email',
+      ].includes(error.code);
+      showAuthGate(
+        invalidCredentials ? 'E-mail ou senha inválidos.' : 'Não foi possível entrar. Tente novamente.',
+        true
+      );
+      loginEmail.focus();
     }
   });
 
   function renderAuthArea(user) {
     if (user) {
-      authArea.innerHTML = `
-        <img class="user-avatar" src="${user.photoURL || ''}" alt="${user.displayName}" title="${user.displayName}" id="userAvatar" />
-        <button class="btn-logout" id="btnLogout">Sair</button>
-      `;
-      document.getElementById('btnLogout').addEventListener('click', async () => {
+      const displayName = user.displayName || user.email || 'Usuário';
+      authArea.innerHTML = '';
+      const identity = document.createElement(user.photoURL ? 'img' : 'span');
+      identity.className = 'user-avatar' + (user.photoURL ? '' : ' user-avatar-fallback');
+      identity.title = displayName;
+      if (user.photoURL) {
+        identity.src = user.photoURL;
+        identity.alt = displayName;
+      } else {
+        identity.textContent = displayName.charAt(0).toUpperCase();
+      }
+      const logoutButton = document.createElement('button');
+      logoutButton.className = 'btn-logout';
+      logoutButton.textContent = 'Sair';
+      authArea.append(identity, logoutButton);
+      logoutButton.addEventListener('click', async () => {
         const fb = await waitFb();
         showAuthGate('Encerrando sessão...', false, true);
         await fetch(`${API}/api/session`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
