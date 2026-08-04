@@ -87,9 +87,9 @@ function ytdlpGetUrl(bloggerToken) {
     const bloggerUrl = `https://www.blogger.com/video.g?token=${bloggerToken}`;
     console.log('[yt-dlp] Extraindo URL de:', bloggerUrl);
 
-    // -f 22 = 720p MP4; --get-url retorna só a URL final
+    // Prioriza MP4 combinado (vídeo + áudio) para o proxy receber uma única URL.
     execFile('yt-dlp', [
-      '-f', '22/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '-f', '22/best[ext=mp4]/best',
       '--get-url',
       '--no-playlist',
       bloggerUrl,
@@ -353,7 +353,10 @@ app.get('/api/proxy', async (req, res) => {
       if (!res.headersSent) res.status(504).json({ error: 'Timeout no upstream' });
     });
     upstream.end();
-    req.on('close', () => upstream.destroy());
+    req.on('aborted', () => upstream.destroy());
+    res.on('close', () => {
+      if (!res.writableEnded) upstream.destroy();
+    });
 
   } catch (err) {
     console.error('[PROXY] Erro:', err.message);

@@ -11,10 +11,9 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "playwright": "1.45.0",
-    "playwright-extra": "^4.3.6",
-    "playwright-extra-plugin-stealth": "^2.11.2",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
     "puppeteer": "^22.12.1",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"

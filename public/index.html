@@ -883,11 +883,11 @@
 
 <script>
   // ── URL base da API ────────────────────────────────────────────────────────
-  // Em produção aponta para o Railway. Na porta 3000 usa o servidor local,
-  // inclusive quando outro aparelho acessa pelo IP da rede Wi-Fi.
-  const API = window.location.port === '3000'
-    ? ''   // relativo → mesmo computador que entregou esta página
-    : 'https://animeplayer-production.up.railway.app'; // ← troque pela URL do Railway depois do deploy
+  // No GitHub Pages, usa o backend hospedado. Quando a página é entregue pelo
+  // Node (localmente ou no Oracle), usa a API do mesmo servidor.
+  const API = window.location.hostname.endsWith('github.io')
+    ? 'https://animeplayer-production.up.railway.app'
+    : '';
 
   // ── Catálogo ───────────────────────────────────────────────────────────────
   // Para adicionar mais animes: inclua um objeto no array CATALOG.
