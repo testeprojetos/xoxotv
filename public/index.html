@@ -617,6 +617,116 @@
     .player-action-btn.previous { text-align: left; }
     .player-action-btn.list { color: var(--accent2); }
 
+    .episode-tools {
+      display: flex;
+      gap: 12px;
+    }
+
+    .download-episode-btn {
+      width: 100%;
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 10px 18px;
+      color: #fff;
+      background: linear-gradient(135deg, #ff824f, var(--accent));
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 13px;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(255, 107, 44, 0.2);
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+    }
+
+    .download-episode-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 13px 34px rgba(255, 107, 44, 0.3);
+    }
+
+    .download-episode-btn:disabled { opacity: 0.45; cursor: wait; box-shadow: none; }
+    .download-episode-btn svg { flex-shrink: 0; }
+    .download-button-copy { display: grid; gap: 1px; text-align: left; }
+    .download-button-title { font-size: 0.88rem; font-weight: 800; }
+    .download-button-sub { font-size: 0.7rem; color: rgba(255,255,255,0.78); }
+
+    .download-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(3, 5, 10, 0.72);
+      backdrop-filter: blur(6px);
+    }
+
+    .download-sheet[hidden] { display: none; }
+
+    .download-sheet-card {
+      width: min(100%, 520px);
+      padding: 22px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: linear-gradient(160deg, #1b2130, #10141f);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+    }
+
+    .download-sheet-handle {
+      width: 42px;
+      height: 4px;
+      margin: -8px auto 18px;
+      border-radius: 99px;
+      background: #465069;
+    }
+
+    .download-sheet-kicker {
+      color: var(--accent);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .download-sheet-title { margin-top: 5px; font-size: 1.05rem; line-height: 1.4; }
+    .download-sheet-copy { margin-top: 9px; color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+    .download-sheet-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-top: 20px; }
+
+    .download-sheet-action {
+      min-height: 44px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      background: var(--surface2);
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    .download-sheet-action.confirm { color: #fff; background: var(--accent); border-color: var(--accent); }
+
+    .app-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      z-index: 950;
+      max-width: calc(100% - 32px);
+      padding: 11px 16px;
+      color: #fff;
+      background: #202737;
+      border: 1px solid #3a455d;
+      border-radius: 10px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.4);
+      font-size: 0.82rem;
+      transform: translate(-50%, 18px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .app-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+
     /* Responsive */
     @media (max-width: 640px) {
       header { padding: 14px 16px; }
@@ -993,11 +1103,38 @@
     <button class="player-action-btn next" id="nextEpisode" type="button">Próximo episódio →</button>
   </div>
 
+  <div class="episode-tools">
+    <button class="download-episode-btn" id="downloadEpisode" type="button" disabled>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/>
+      </svg>
+      <span class="download-button-copy">
+        <span class="download-button-title">Baixar episódio</span>
+        <span class="download-button-sub">MP4 · 720p · marca como visto</span>
+      </span>
+    </button>
+  </div>
+
   <div>
     <p class="more-eps-label">Episódios próximos</p>
     <div class="more-eps-list" id="moreEpsList"></div>
   </div>
 </div>
+
+<div class="download-sheet" id="downloadSheet" hidden>
+  <div class="download-sheet-card" role="dialog" aria-modal="true" aria-labelledby="downloadSheetTitle">
+    <div class="download-sheet-handle"></div>
+    <span class="download-sheet-kicker">Download do episódio</span>
+    <h2 class="download-sheet-title" id="downloadSheetTitle">—</h2>
+    <p class="download-sheet-copy">O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.</p>
+    <div class="download-sheet-actions">
+      <button class="download-sheet-action" id="cancelDownload" type="button">Cancelar</button>
+      <button class="download-sheet-action confirm" id="confirmDownload" type="button">Baixar agora</button>
+    </div>
+  </div>
+</div>
+
+<div class="app-toast" id="appToast" role="status" aria-live="polite"></div>
 
 <script>
   // ── URL base da API ────────────────────────────────────────────────────────
@@ -1966,6 +2103,8 @@
   let currentUser  = null;
   let userHistory  = {}; // { [animeId_epId]: { progress, duration, updatedAt } }
   let saveTimer    = null;
+  let toastTimer   = null;
+  let currentDownloadUrl = '';
   let currentArcId = ONE_PIECE_ARCS[0].id;
   let currentEpisodePage = 1;
   const EPISODES_PER_PAGE = 24;
@@ -2006,6 +2145,12 @@
   const previousEpisode= document.getElementById('previousEpisode');
   const nextEpisode    = document.getElementById('nextEpisode');
   const backToEpisodeList = document.getElementById('backToEpisodeList');
+  const downloadEpisode = document.getElementById('downloadEpisode');
+  const downloadSheet = document.getElementById('downloadSheet');
+  const downloadSheetTitle = document.getElementById('downloadSheetTitle');
+  const cancelDownload = document.getElementById('cancelDownload');
+  const confirmDownload = document.getElementById('confirmDownload');
+  const appToast = document.getElementById('appToast');
 
   // ── Firebase Auth ──────────────────────────────────────────────────────────
   let pendingAuthError = '';
@@ -2147,6 +2292,7 @@
     const fb  = await waitFb();
     const key = histKey(animeId, ep.goyabuId);
     const data = {
+      ...(userHistory[key] || {}),
       animeId, animeTitle: currentAnime.title,
       epLabel: ep.label, epTitle: ep.title,
       goyabuId: ep.goyabuId,
@@ -2157,6 +2303,32 @@
     };
     userHistory[key] = data;
     await fb.setDoc(fb.doc(fb.db, 'users', currentUser.uid, 'history', key), data);
+  }
+
+  async function markDownloadedAsWatched() {
+    if (!currentUser || !currentAnime || !currentEp) return;
+    const fb = await waitFb();
+    const key = histKey(currentAnime.id, currentEp.goyabuId);
+    const existing = userHistory[key] || {};
+    const completedDuration = existing.duration > 0 ? existing.duration : 1;
+    const data = {
+      ...existing,
+      animeId: currentAnime.id,
+      animeTitle: currentAnime.title,
+      epLabel: currentEp.label,
+      epTitle: currentEp.title,
+      goyabuId: currentEp.goyabuId,
+      thumb: currentEp.thumb || null,
+      progress: completedDuration,
+      duration: completedDuration,
+      downloadMarkedWatched: true,
+      downloadedAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    userHistory[key] = data;
+    await fb.setDoc(fb.doc(fb.db, 'users', currentUser.uid, 'history', key), data);
+    refreshEpBadges();
+    renderContinueWatching();
   }
 
   // ── Progresso nos cards ────────────────────────────────────────────────────
@@ -2179,7 +2351,7 @@
     card.querySelector('.ep-watched-badge')?.remove();
     if (!hist) return;
     const pct = hist.duration > 0 ? (hist.progress / hist.duration) * 100 : 0;
-    const watched = pct > 90;
+    const watched = hist.downloadMarkedWatched || pct > 90;
     const wrap = card.querySelector('.ep-thumb-wrap');
     if (watched) {
       const badge = document.createElement('div');
@@ -2200,7 +2372,7 @@
     const entries = Object.values(userHistory)
       .filter(h => {
         const pct = h.duration > 0 ? (h.progress / h.duration) * 100 : 0;
-        return pct > 2 && pct < 95;
+        return !h.downloadMarkedWatched && pct > 2 && pct < 95;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -2448,6 +2620,9 @@
   async function playEpisode(ep) {
     if (!videoPlayer.paused) videoPlayer.pause();
     currentEp = ep;
+    currentDownloadUrl = '';
+    downloadEpisode.disabled = true;
+    downloadSheet.hidden = true;
 
     const episodeIndex = currentAnime.episodes.findIndex(item => item.goyabuId === ep.goyabuId);
     const previous = episodeIndex > 0 ? currentAnime.episodes[episodeIndex - 1] : null;
@@ -2497,6 +2672,10 @@
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
+      const filename = `${currentAnime.title} - ${ep.label}${ep.title ? ` - ${ep.title}` : ''}`;
+      const separator = data.url.includes('?') ? '&' : '?';
+      currentDownloadUrl = `${API}${data.url}${separator}download=1&filename=${encodeURIComponent(filename)}`;
+      downloadEpisode.disabled = false;
 
       // Retoma do ponto salvo
       const hist = getEpProgress(currentAnime.id, ep.goyabuId);
@@ -2517,6 +2696,50 @@
       errorBox.classList.add('visible');
     }
   }
+
+  function showToast(message) {
+    clearTimeout(toastTimer);
+    appToast.textContent = message;
+    appToast.classList.add('visible');
+    toastTimer = setTimeout(() => appToast.classList.remove('visible'), 3200);
+  }
+
+  function closeDownloadSheet() {
+    downloadSheet.hidden = true;
+  }
+
+  downloadEpisode.addEventListener('click', () => {
+    if (!currentDownloadUrl || !currentEp) return;
+    downloadSheetTitle.textContent = `${currentAnime.title} · ${currentEp.label}`;
+    downloadSheet.hidden = false;
+  });
+
+  cancelDownload.addEventListener('click', closeDownloadSheet);
+  downloadSheet.addEventListener('click', event => {
+    if (event.target === downloadSheet) closeDownloadSheet();
+  });
+
+  confirmDownload.addEventListener('click', () => {
+    if (!currentDownloadUrl || !currentEp) return;
+    const anchor = document.createElement('a');
+    anchor.href = currentDownloadUrl;
+    anchor.download = `${currentAnime.title} - ${currentEp.label}.mp4`;
+    anchor.hidden = true;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    closeDownloadSheet();
+    showToast('Download iniciado · episódio marcado como visto');
+    markDownloadedAsWatched().catch(error => {
+      console.warn('Não foi possível marcar o download no histórico:', error.message);
+      showToast('Download iniciado, mas o histórico não foi atualizado');
+    });
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !downloadSheet.hidden) closeDownloadSheet();
+  });
 
   // ── Salva progresso enquanto o vídeo toca ──────────────────────────────────
   videoPlayer.addEventListener('timeupdate', () => {

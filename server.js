@@ -211,6 +211,20 @@ function extractEpisodeId(raw) {
   return /^\d+$/.test(raw.trim()) ? raw.trim() : raw.trim();
 }
 
+function safeDownloadFilename(raw, episodeId) {
+  const fallback = `XoxoTV - Episodio ${episodeId}`;
+  const base = String(raw || fallback)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\r\n]/g, ' ')
+    .replace(/[^a-zA-Z0-9 ._()-]/g, '')
+    .replace(/\.mp4$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140) || fallback;
+  return `${base}.mp4`;
+}
+
 // ─── Opção 1: yt-dlp ──────────────────────────────────────────────────────────
 // yt-dlp sabe extrair vídeos do Blogger. A URL gerada fica vinculada ao IP do
 // servidor que fez a requisição, então proxy e extração são feitos do mesmo IP.
@@ -417,7 +431,7 @@ app.get('/api/stream', async (req, res) => {
 // então não há problema de IP assinado diferente.
 
 app.get('/api/proxy', async (req, res) => {
-  const { id } = req.query;
+  const { id, download, filename } = req.query;
   if (!id) return res.status(400).send('Parâmetro "id" obrigatório');
   console.log(`\n[PROXY] id=${id}`);
 
@@ -467,6 +481,10 @@ app.get('/api/proxy', async (req, res) => {
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'no-store',
       };
+      if (download === '1') {
+        const safeName = safeDownloadFilename(filename, id);
+        clientHeaders['Content-Disposition'] = `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
+      }
       if (upstreamRes.headers['content-length'])
         clientHeaders['Content-Length'] = upstreamRes.headers['content-length'];
       if (upstreamRes.headers['content-range'])
