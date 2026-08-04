@@ -2368,11 +2368,12 @@
 
   // ── Continuar assistindo ───────────────────────────────────────────────────
   function renderContinueWatching() {
-    // Pega o episódio mais recente com progresso > 2% e < 95%
+    // Usa o histórico mais recente: retoma se estiver incompleto ou sugere o
+    // próximo episódio se o último foi concluído/baixado.
     const entries = Object.values(userHistory)
       .filter(h => {
         const pct = h.duration > 0 ? (h.progress / h.duration) * 100 : 0;
-        return !h.downloadMarkedWatched && pct > 2 && pct < 95;
+        return h.downloadMarkedWatched || pct > 2;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -2382,24 +2383,37 @@
     }
 
     const last = entries[0];
-    const pct  = last.duration > 0 ? Math.round((last.progress / last.duration) * 100) : 0;
-    const remaining = last.duration > 0
-      ? formatTime(last.duration - last.progress) + ' restando'
-      : `${pct}% assistido`;
+    const lastPct = last.duration > 0 ? (last.progress / last.duration) * 100 : 0;
+    const anime = CATALOG.find(item => item.id === last.animeId);
+    let targetEp = anime?.episodes.find(ep => ep.goyabuId === last.goyabuId);
+    let isNextEpisode = false;
 
-    document.getElementById('continueThumb').src   = last.thumb || '';
-    document.getElementById('continueEpLabel').textContent = `${last.animeTitle} · ${last.epLabel}`;
-    document.getElementById('continueEpTitle').textContent = last.epTitle || '';
-    document.getElementById('continueSub').textContent     = remaining;
+    if (last.downloadMarkedWatched || lastPct >= 90) {
+      const completedIndex = anime?.episodes.findIndex(ep => ep.goyabuId === last.goyabuId) ?? -1;
+      targetEp = completedIndex >= 0 ? anime.episodes[completedIndex + 1] : null;
+      isNextEpisode = true;
+    }
+
+    if (!anime || !targetEp) {
+      continueSection.style.display = 'none';
+      return;
+    }
+
+    const remaining = isNextEpisode
+      ? 'Próximo episódio'
+      : last.duration > 0
+        ? formatTime(Math.max(0, last.duration - last.progress)) + ' restando'
+        : `${Math.round(lastPct)}% assistido`;
+
+    document.getElementById('continueThumb').src = targetEp.thumb || anime.poster || '';
+    document.getElementById('continueEpLabel').textContent = `${anime.title} · ${targetEp.label}`;
+    document.getElementById('continueEpTitle').textContent = targetEp.title || '';
+    document.getElementById('continueSub').textContent = remaining;
 
     continueSection.style.display = 'block';
     continueCard.onclick = () => {
-      const anime = CATALOG.find(a => a.id === last.animeId);
-      const ep    = anime?.episodes.find(e => e.goyabuId === last.goyabuId);
-      if (anime && ep) {
-        goToEpisodes(anime);
-        setTimeout(() => playEpisode(ep), 100);
-      }
+      goToEpisodes(anime);
+      setTimeout(() => playEpisode(targetEp), 100);
     };
   }
 
@@ -2758,6 +2772,14 @@
     if (!currentUser || !currentEp || !currentAnime) return;
     clearTimeout(saveTimer);
     saveProgress(currentAnime.id, currentEp, videoPlayer.currentTime, videoPlayer.duration);
+  });
+
+  videoPlayer.addEventListener('ended', async () => {
+    if (!currentUser || !currentEp || !currentAnime) return;
+    clearTimeout(saveTimer);
+    await saveProgress(currentAnime.id, currentEp, videoPlayer.duration, videoPlayer.duration);
+    refreshEpBadges();
+    renderContinueWatching();
   });
 
   window.addEventListener('beforeunload', () => {
