@@ -735,6 +735,7 @@
     }
 
     .download-sheet-action.confirm { color: #fff; background: var(--accent); border-color: var(--accent); }
+    .download-sheet-action[aria-disabled="true"] { opacity: 0.55; cursor: wait; pointer-events: none; }
 
     .app-toast {
       position: fixed;
@@ -2763,27 +2764,55 @@
     downloadSheet.hidden = true;
   }
 
-  downloadEpisode.addEventListener('click', () => {
-    if (!currentDownloadUrl || !currentEp) return;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  function isIOSDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
       || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  downloadEpisode.addEventListener('click', async () => {
+    if (!currentDownloadUrl || !currentEp) return;
+    const isIOS = isIOSDevice();
+    const episodeAtOpen = currentEp;
+    const filename = `${currentAnime.title} - ${currentEp.label}.mp4`;
 
     downloadSheetTitle.textContent = `${currentAnime.title} · ${currentEp.label}`;
-    confirmDownload.href = currentDownloadUrl;
+    confirmDownload.textContent = 'Baixar agora';
+    confirmDownload.removeAttribute('aria-disabled');
+    downloadSheet.hidden = false;
 
     if (isIOS) {
-      confirmDownload.download = `${currentAnime.title} - ${currentEp.label}.mp4`;
+      confirmDownload.href = '#';
+      confirmDownload.removeAttribute('download');
       confirmDownload.removeAttribute('target');
       confirmDownload.removeAttribute('rel');
-      downloadSheetCopy.textContent = 'O iPhone abrirá o download nesta tela. Escolha Baixar quando a opção do sistema aparecer; o episódio será marcado como visto.';
-    } else {
-      confirmDownload.download = `${currentAnime.title} - ${currentEp.label}.mp4`;
-      confirmDownload.removeAttribute('target');
-      confirmDownload.removeAttribute('rel');
-      downloadSheetCopy.textContent = 'O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.';
+      confirmDownload.setAttribute('aria-disabled', 'true');
+      confirmDownload.textContent = 'Preparando...';
+      downloadSheetCopy.textContent = 'Preparando um link seguro para abrir este episódio no Safari.';
+
+      try {
+        const response = await fetch(`${API}/api/download-link?id=${encodeURIComponent(currentEp.goyabuId)}&filename=${encodeURIComponent(filename)}`, {
+          credentials: 'include',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.url) throw new Error(data.error || 'Não foi possível preparar o download');
+        if (currentEp !== episodeAtOpen) return;
+
+        confirmDownload.href = data.url;
+        confirmDownload.removeAttribute('aria-disabled');
+        confirmDownload.textContent = 'Baixar pelo Safari';
+        downloadSheetCopy.textContent = 'O Safari será aberto e mostrará a opção do iPhone para baixar o episódio. O link expira em 10 minutos.';
+      } catch (error) {
+        confirmDownload.textContent = 'Feche e tente novamente';
+        downloadSheetCopy.textContent = `Não foi possível preparar o download: ${error.message}`;
+      }
+      return;
     }
 
-    downloadSheet.hidden = false;
+    confirmDownload.href = currentDownloadUrl;
+    confirmDownload.download = filename;
+    confirmDownload.removeAttribute('target');
+    confirmDownload.removeAttribute('rel');
+    downloadSheetCopy.textContent = 'O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.';
   });
 
   cancelDownload.addEventListener('click', closeDownloadSheet);
@@ -2791,11 +2820,17 @@
     if (event.target === downloadSheet) closeDownloadSheet();
   });
 
-  confirmDownload.addEventListener('click', () => {
+  confirmDownload.addEventListener('click', event => {
     if (!currentDownloadUrl || !currentEp) return;
+    if (confirmDownload.getAttribute('aria-disabled') === 'true' || confirmDownload.href.endsWith('#')) {
+      event.preventDefault();
+      return;
+    }
 
     closeDownloadSheet();
-    showToast('Download enviado ao sistema · episódio marcado como visto');
+    showToast(isIOSDevice()
+      ? 'Abrindo download no Safari · episódio marcado como visto'
+      : 'Download enviado ao sistema · episódio marcado como visto');
     markDownloadedAsWatched().catch(error => {
       console.warn('Não foi possível marcar o download no histórico:', error.message);
       showToast('Download iniciado, mas o histórico não foi atualizado');
