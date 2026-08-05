@@ -647,6 +647,7 @@
       display: flex;
       gap: 12px;
     }
+    .episode-tools[hidden] { display: none; }
 
     .download-episode-btn {
       width: 100%;
@@ -735,7 +736,6 @@
     }
 
     .download-sheet-action.confirm { color: #fff; background: var(--accent); border-color: var(--accent); }
-    .download-sheet-action[aria-disabled="true"] { opacity: 0.55; cursor: wait; pointer-events: none; }
 
     .app-toast {
       position: fixed;
@@ -2185,6 +2185,7 @@
   const previousEpisode= document.getElementById('previousEpisode');
   const nextEpisode    = document.getElementById('nextEpisode');
   const backToEpisodeList = document.getElementById('backToEpisodeList');
+  const episodeTools = document.querySelector('.episode-tools');
   const downloadEpisode = document.getElementById('downloadEpisode');
   const downloadSheet = document.getElementById('downloadSheet');
   const downloadSheetTitle = document.getElementById('downloadSheetTitle');
@@ -2764,55 +2765,26 @@
     downloadSheet.hidden = true;
   }
 
-  function isIOSDevice() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function isStandaloneApp() {
+    return window.matchMedia('(display-mode: standalone)').matches
+      || navigator.standalone === true;
   }
 
-  downloadEpisode.addEventListener('click', async () => {
+  episodeTools.hidden = isStandaloneApp();
+
+  downloadEpisode.addEventListener('click', () => {
     if (!currentDownloadUrl || !currentEp) return;
-    const isIOS = isIOSDevice();
-    const episodeAtOpen = currentEp;
     const filename = `${currentAnime.title} - ${currentEp.label}.mp4`;
 
     downloadSheetTitle.textContent = `${currentAnime.title} · ${currentEp.label}`;
-    confirmDownload.textContent = 'Baixar agora';
-    confirmDownload.removeAttribute('aria-disabled');
-    downloadSheet.hidden = false;
-
-    if (isIOS) {
-      confirmDownload.href = '#';
-      confirmDownload.removeAttribute('download');
-      confirmDownload.removeAttribute('target');
-      confirmDownload.removeAttribute('rel');
-      confirmDownload.setAttribute('aria-disabled', 'true');
-      confirmDownload.textContent = 'Preparando...';
-      downloadSheetCopy.textContent = 'Preparando um link seguro para abrir este episódio no Safari.';
-
-      try {
-        const response = await fetch(`${API}/api/download-link?id=${encodeURIComponent(currentEp.goyabuId)}&filename=${encodeURIComponent(filename)}`, {
-          credentials: 'include',
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.url) throw new Error(data.error || 'Não foi possível preparar o download');
-        if (currentEp !== episodeAtOpen) return;
-
-        confirmDownload.href = data.url;
-        confirmDownload.removeAttribute('aria-disabled');
-        confirmDownload.textContent = 'Baixar pelo Safari';
-        downloadSheetCopy.textContent = 'O Safari será aberto e mostrará a opção do iPhone para baixar o episódio. O link expira em 10 minutos.';
-      } catch (error) {
-        confirmDownload.textContent = 'Feche e tente novamente';
-        downloadSheetCopy.textContent = `Não foi possível preparar o download: ${error.message}`;
-      }
-      return;
-    }
-
     confirmDownload.href = currentDownloadUrl;
     confirmDownload.download = filename;
+    confirmDownload.textContent = 'Baixar agora';
+    confirmDownload.removeAttribute('aria-disabled');
     confirmDownload.removeAttribute('target');
     confirmDownload.removeAttribute('rel');
     downloadSheetCopy.textContent = 'O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.';
+    downloadSheet.hidden = false;
   });
 
   cancelDownload.addEventListener('click', closeDownloadSheet);
@@ -2820,17 +2792,11 @@
     if (event.target === downloadSheet) closeDownloadSheet();
   });
 
-  confirmDownload.addEventListener('click', event => {
+  confirmDownload.addEventListener('click', () => {
     if (!currentDownloadUrl || !currentEp) return;
-    if (confirmDownload.getAttribute('aria-disabled') === 'true' || confirmDownload.href.endsWith('#')) {
-      event.preventDefault();
-      return;
-    }
 
     closeDownloadSheet();
-    showToast(isIOSDevice()
-      ? 'Abrindo download no Safari · episódio marcado como visto'
-      : 'Download enviado ao sistema · episódio marcado como visto');
+    showToast('Download enviado ao navegador · episódio marcado como visto');
     markDownloadedAsWatched().catch(error => {
       console.warn('Não foi possível marcar o download no histórico:', error.message);
       showToast('Download iniciado, mas o histórico não foi atualizado');

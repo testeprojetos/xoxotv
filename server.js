@@ -10,7 +10,6 @@ const FIREBASE_API_KEY = 'AIzaSyBaHem45yqhV-V4CyBoqd4bF3-e5RjaCzU';
 const FIREBASE_PROJECT_ID = 'anime-326c0';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
-const DOWNLOAD_LINK_MAX_AGE_SECONDS = 10 * 60;
 
 if (!process.env.SESSION_SECRET) {
   console.warn('[auth] SESSION_SECRET ausente; as sessões serão invalidadas ao reiniciar.');
@@ -145,55 +144,6 @@ function readSession(req) {
   }
 }
 
-function signDownloadToken(id, user) {
-  const payload = Buffer.from(JSON.stringify({
-    id: String(id),
-    uid: user.uid,
-    email: user.email,
-    exp: Date.now() + DOWNLOAD_LINK_MAX_AGE_SECONDS * 1000,
-  })).toString('base64url');
-  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
-  return `${payload}.${signature}`;
-}
-
-function readDownloadToken(token, requestedId) {
-  if (!token) return null;
-  const [payload, signature] = String(token).split('.');
-  if (!payload || !signature) return null;
-
-  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest();
-  let received;
-  try {
-    received = Buffer.from(signature, 'base64url');
-  } catch (_) {
-    return null;
-  }
-  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
-
-  try {
-    const download = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!download.uid || !download.email || download.exp <= Date.now()) return null;
-    if (String(download.id) !== String(requestedId)) return null;
-    return download;
-  } catch (_) {
-    return null;
-  }
-}
-
-function getDownloadOrigin(req) {
-  const forwardedHost = String(req.headers['x-forwarded-host'] || req.headers.host || '')
-    .split(',')[0]
-    .trim();
-  const externalHost = process.env.DOWNLOAD_HOST
-    || (/^xoxotv\./i.test(forwardedHost)
-      ? forwardedHost.replace(/^xoxotv\./i, 'downloads.')
-      : forwardedHost);
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http')
-    .split(',')[0]
-    .trim();
-  return `${forwardedProto === 'https' ? 'https' : 'http'}://${externalHost}`;
-}
-
 async function verifyFirebaseToken(idToken) {
   const response = await httpPostJson(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
@@ -247,14 +197,6 @@ app.delete('/api/session', (req, res) => {
 });
 
 app.use('/api', (req, res, next) => {
-  if (req.path === '/proxy' && req.query.download === '1') {
-    const download = readDownloadToken(req.query.token, req.query.id);
-    if (download) {
-      req.user = download;
-      return next();
-    }
-  }
-
   const session = readSession(req);
   if (!session) return res.status(401).json({ error: 'Faça login para acessar.' });
   req.user = session;
@@ -482,24 +424,6 @@ app.get('/api/stream', async (req, res) => {
     console.error('[API] Erro:', err.message);
     res.status(500).json({ error: err.message });
   }
-});
-
-// ─── API: link temporário para download no Safari ───────────────────────────
-
-app.get('/api/download-link', (req, res) => {
-  const id = extractEpisodeId(String(req.query.id || ''));
-  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Episódio inválido' });
-
-  const filename = safeDownloadFilename(req.query.filename, id);
-  const token = signDownloadToken(id, req.user);
-  const url = new URL('/api/proxy', getDownloadOrigin(req));
-  url.searchParams.set('id', id);
-  url.searchParams.set('download', '1');
-  url.searchParams.set('filename', filename);
-  url.searchParams.set('token', token);
-
-  res.setHeader('Cache-Control', 'no-store');
-  res.json({ url: url.toString(), expiresIn: DOWNLOAD_LINK_MAX_AGE_SECONDS });
 });
 
 // ─── API: /api/proxy — pipe da URL do googlevideo ────────────────────────────
