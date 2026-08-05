@@ -722,11 +722,15 @@
     .download-sheet-action {
       min-height: 44px;
       padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       border: 1px solid var(--border);
       border-radius: 10px;
       color: var(--text);
       background: var(--surface2);
       font-weight: 750;
+      text-decoration: none;
       cursor: pointer;
     }
 
@@ -1160,10 +1164,10 @@
     <div class="download-sheet-handle"></div>
     <span class="download-sheet-kicker">Download do episódio</span>
     <h2 class="download-sheet-title" id="downloadSheetTitle">—</h2>
-    <p class="download-sheet-copy">O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.</p>
+    <p class="download-sheet-copy" id="downloadSheetCopy">O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.</p>
     <div class="download-sheet-actions">
       <button class="download-sheet-action" id="cancelDownload" type="button">Cancelar</button>
-      <button class="download-sheet-action confirm" id="confirmDownload" type="button">Baixar agora</button>
+      <a class="download-sheet-action confirm" id="confirmDownload" href="#">Baixar agora</a>
     </div>
   </div>
 </div>
@@ -2183,6 +2187,7 @@
   const downloadEpisode = document.getElementById('downloadEpisode');
   const downloadSheet = document.getElementById('downloadSheet');
   const downloadSheetTitle = document.getElementById('downloadSheetTitle');
+  const downloadSheetCopy = document.getElementById('downloadSheetCopy');
   const cancelDownload = document.getElementById('cancelDownload');
   const confirmDownload = document.getElementById('confirmDownload');
   const appToast = document.getElementById('appToast');
@@ -2760,7 +2765,24 @@
 
   downloadEpisode.addEventListener('click', () => {
     if (!currentDownloadUrl || !currentEp) return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
     downloadSheetTitle.textContent = `${currentAnime.title} · ${currentEp.label}`;
+    confirmDownload.href = currentDownloadUrl;
+
+    if (isIOS) {
+      confirmDownload.removeAttribute('download');
+      confirmDownload.target = '_blank';
+      confirmDownload.rel = 'noopener';
+      downloadSheetCopy.textContent = 'O iPhone abrirá o download pelo sistema. Escolha Baixar quando a opção aparecer; o episódio será marcado como visto.';
+    } else {
+      confirmDownload.download = `${currentAnime.title} - ${currentEp.label}.mp4`;
+      confirmDownload.removeAttribute('target');
+      confirmDownload.removeAttribute('rel');
+      downloadSheetCopy.textContent = 'O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.';
+    }
+
     downloadSheet.hidden = false;
   });
 
@@ -2771,16 +2793,9 @@
 
   confirmDownload.addEventListener('click', () => {
     if (!currentDownloadUrl || !currentEp) return;
-    const anchor = document.createElement('a');
-    anchor.href = currentDownloadUrl;
-    anchor.download = `${currentAnime.title} - ${currentEp.label}.mp4`;
-    anchor.hidden = true;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
 
     closeDownloadSheet();
-    showToast('Download iniciado · episódio marcado como visto');
+    showToast('Download enviado ao sistema · episódio marcado como visto');
     markDownloadedAsWatched().catch(error => {
       console.warn('Não foi possível marcar o download no histórico:', error.message);
       showToast('Download iniciado, mas o histórico não foi atualizado');
