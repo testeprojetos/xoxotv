@@ -236,7 +236,7 @@ async function getAnimesDigitalStream(episodeNumber) {
     try {
       const manifest = await httpGet(url, HLS_HEADERS);
       if (manifest.status !== 200 || !manifest.body.trimStart().startsWith('#EXTM3U')) continue;
-      const stream = { url, capturedAt: Date.now() };
+      const stream = { url, manifest: manifest.body, capturedAt: Date.now() };
       streamCache.set(cacheKey, stream);
       console.log(`[source] ✅ HLS direto encontrado para episódio ${episodeNumber}`);
       return stream;
@@ -267,79 +267,105 @@ app.get('/api/stream', async (req, res) => {
   }
 });
 
-// ─── API: /api/proxy — entrega o manifesto HLS ao player ──────────────────
+function rewriteHlsManifest(stream, episodeNumber) {
+  const cdnHost = new URL(stream.url).hostname;
+  return stream.manifest.split(/\r?\n/).map(line => {
+    const source = line.trim();
+    if (!source || source.startsWith('#')) return line;
+    try {
+      const segmentUrl = new URL(source, stream.url);
+      if (segmentUrl.hostname !== cdnHost) return line;
+      const match = segmentUrl.pathname.match(/\/(seg-[a-zA-Z0-9_-]+)\.webp$/);
+      if (!match) return line;
+      return `/api/hls/${episodeNumber}/${match[1]}.ts`;
+    } catch (_) {
+      return line;
+    }
+  }).join('\n');
+}
+
+// ─── API: /api/proxy — entrega o manifesto HLS adaptado ao aparelho ─────────
 
 app.get('/api/proxy', async (req, res) => {
   try {
     const episodeNumber = parseEpisodeNumber(req.query.episode);
     const stream = await getAnimesDigitalStream(episodeNumber);
-    const videoUrl = stream.url;
     console.log(`\n[PROXY] episode=${episodeNumber}`);
-    console.log(`[PROXY] Piping: ${videoUrl.substring(0, 80)}...`);
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(rewriteHlsManifest(stream, episodeNumber));
+  } catch (err) {
+    console.error('[PROXY] Erro:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
 
-    const rangeHeader = req.headers['range'];
+// O CDN entrega MPEG-TS com extensão .webp. O Safari/iPhone rejeita essa
+// extensão no HLS nativo, então expomos os mesmos bytes como .ts no app.
+app.get('/api/hls/:episode/:segment', async (req, res) => {
+  try {
+    const episodeNumber = parseEpisodeNumber(req.params.episode);
+    const requestedSegment = String(req.params.segment || '');
+    if (!/^seg-[a-zA-Z0-9_-]+\.ts$/.test(requestedSegment)) {
+      return res.status(400).json({ error: 'Segmento inválido' });
+    }
 
-    const upstreamHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+    const stream = await getAnimesDigitalStream(episodeNumber);
+    const upstreamName = requestedSegment.replace(/\.ts$/, '.webp');
+    const segmentUrl = new URL(upstreamName, stream.url);
+    const rangeHeader = req.headers.range;
+    const headers = {
+      ...HLS_HEADERS,
       'Accept': '*/*',
-      'Accept-Language': 'pt-BR,pt;q=0.9',
       'Referer': stream.url,
     };
+    if (rangeHeader) headers.Range = rangeHeader;
 
-    if (rangeHeader) upstreamHeaders['Range'] = rangeHeader;
-
-    const parsedUrl = new URL(videoUrl);
-    const upstream  = https.request({
-      hostname: parsedUrl.hostname,
-      path: parsedUrl.pathname + parsedUrl.search,
+    const upstream = https.request({
+      hostname: segmentUrl.hostname,
+      path: segmentUrl.pathname + segmentUrl.search,
       method: 'GET',
-      family: 4, // força IPv4 — consistente com o IP que gerou a URL
-      headers: upstreamHeaders,
-    }, (upstreamRes) => {
-      const status = upstreamRes.statusCode;
-      console.log(`[PROXY] upstream status: ${status}`);
-
-      if (status === 403 || status === 410) {
-        streamCache.delete(String(episodeNumber));
-        if (!res.headersSent) {
-          res.status(503).json({ error: 'Stream expirado, clique em Assistir novamente' });
-        }
+      family: 4,
+      headers,
+    }, upstreamRes => {
+      const status = upstreamRes.statusCode || 502;
+      if (status !== 200 && status !== 206) {
         upstreamRes.resume();
+        if (!res.headersSent) res.status(status).end();
         return;
       }
 
       const clientHeaders = {
-        'Content-Type': upstreamRes.headers['content-type'] || 'video/mp4',
+        'Content-Type': 'video/mp2t',
         'Accept-Ranges': 'bytes',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'public, max-age=86400, immutable',
       };
-      if (upstreamRes.headers['content-length'])
+      if (upstreamRes.headers['content-length']) {
         clientHeaders['Content-Length'] = upstreamRes.headers['content-length'];
-      if (upstreamRes.headers['content-range'])
+      }
+      if (upstreamRes.headers['content-range']) {
         clientHeaders['Content-Range'] = upstreamRes.headers['content-range'];
-
+      }
       res.writeHead(status, clientHeaders);
-      upstreamRes.pipe(res, { end: true });
-      upstreamRes.on('error', e => console.error('[PROXY] upstream error:', e.message));
+      upstreamRes.pipe(res);
+      upstreamRes.on('error', error => {
+        console.error('[HLS] Erro no segmento:', error.message);
+        if (!res.writableEnded) res.destroy(error);
+      });
     });
 
-    upstream.on('error', e => {
-      console.error('[PROXY] request error:', e.message);
-      if (!res.headersSent) res.status(500).json({ error: e.message });
+    upstream.on('error', error => {
+      console.error('[HLS] Falha ao buscar segmento:', error.message);
+      if (!res.headersSent) res.status(502).json({ error: 'Falha ao carregar trecho do vídeo' });
     });
-    upstream.setTimeout(30000, () => {
-      upstream.destroy();
-      if (!res.headersSent) res.status(504).json({ error: 'Timeout no upstream' });
-    });
+    upstream.setTimeout(30000, () => upstream.destroy(new Error('Timeout no segmento')));
     upstream.end();
     req.on('aborted', () => upstream.destroy());
     res.on('close', () => {
       if (!res.writableEnded) upstream.destroy();
     });
-
   } catch (err) {
-    console.error('[PROXY] Erro:', err.message);
+    console.error('[HLS] Erro:', err.message);
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
