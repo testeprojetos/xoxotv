@@ -43,13 +43,9 @@ app.get('/vendor/hls.min.js', (_req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
-const streamCache = new Map(); // episodeNumber -> { url, sourcePage, capturedAt }
-const episodePageCache = new Map(); // episodeNumber -> URL da página no provedor
+const streamCache = new Map(); // episodeNumber -> { url, capturedAt }
 const STREAM_TTL = 24 * 60 * 60 * 1000;
-const CATALOG_TTL = 60 * 60 * 1000;
-const ANIMES_DIGITAL_CATALOG = 'https://animesdigital.org/anime/a/onepiecx001';
-const ANIMES_DIGITAL_HOST = 'animesdigital.org';
-let catalogFirstPageCache = null;
+const HLS_CDN_BASE = 'https://cdn-s01.mywallpaper-4k-image.net/stream/sv/o/one-piece-dublado-v2';
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
@@ -205,10 +201,10 @@ function safeDownloadFilename(raw, episodeId) {
 
 // ─── Fonte de vídeo ────────────────────────────────────────────────────────────────
 // O histórico continua usando os IDs antigos no navegador, mas a reprodução
-// resolve o número exibido do episódio no catálogo do AnimesDigital.
-const PROVIDER_HEADERS = {
+// resolve o número exibido diretamente no CDN, sem depender do site de origem.
+const HLS_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*;q=0.8',
   'Accept-Language': 'pt-BR,pt;q=0.9',
 };
 
@@ -221,90 +217,11 @@ function parseEpisodeNumber(raw) {
   return value;
 }
 
-function decodeHtml(value) {
-  return value
-    .replace(/&amp;/gi, '&')
-    .replace(/&#0*38;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;|&apos;/gi, "'");
-}
-
-function parseCatalogEntries(html) {
-  const entries = [];
-  const pattern = /href=["'](?<url>https:\/\/animesdigital\.org\/video\/a\/[^"']+)["'][\s\S]{0,900}?class=["']title_anime["']>(?<title>[^<]+)</gi;
-  let match;
-  while ((match = pattern.exec(html)) !== null) {
-    const numberMatch = match.groups.title.match(/Epis[oó]dio\s+0*(\d+)/i);
-    if (!numberMatch) continue;
-    entries.push({
-      episodeNumber: Number.parseInt(numberMatch[1], 10),
-      url: match.groups.url,
-    });
-  }
-  return entries;
-}
-
-function rememberCatalogEntries(entries) {
-  for (const entry of entries) episodePageCache.set(entry.episodeNumber, entry.url);
-}
-
-async function fetchCatalogPage(page = 1) {
-  if (page === 1 && catalogFirstPageCache &&
-      Date.now() - catalogFirstPageCache.capturedAt < CATALOG_TTL) {
-    return catalogFirstPageCache.entries;
-  }
-
-  const url = page === 1 ? ANIMES_DIGITAL_CATALOG : `${ANIMES_DIGITAL_CATALOG}/page/${page}/`;
-  const response = await httpGet(url, PROVIDER_HEADERS);
-  if (response.status !== 200) {
-    throw new Error(`Catálogo do AnimesDigital retornou HTTP ${response.status}`);
-  }
-
-  const entries = parseCatalogEntries(response.body);
-  if (!entries.length) throw new Error('Lista de episódios não encontrada no AnimesDigital');
-  rememberCatalogEntries(entries);
-  if (page === 1) catalogFirstPageCache = { entries, capturedAt: Date.now() };
-  return entries;
-}
-
-async function getEpisodePageUrl(episodeNumber) {
-  if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
-
-  const firstPageEntries = await fetchCatalogPage(1);
-  if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
-
-  const newestEpisode = Math.max(...firstPageEntries.map(entry => entry.episodeNumber));
-  const pageSize = firstPageEntries.length;
-  const expectedPage = Math.floor((newestEpisode - episodeNumber) / pageSize) + 1;
-  if (expectedPage < 1) throw new Error(`Episódio ${episodeNumber} ainda não está disponível`);
-
-  await fetchCatalogPage(expectedPage);
-  if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
-
-  for (const adjacentPage of [expectedPage - 1, expectedPage + 1]) {
-    if (adjacentPage < 1) continue;
-    await fetchCatalogPage(adjacentPage);
-    if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
-  }
-
-  throw new Error(`Episódio ${episodeNumber} não encontrado no AnimesDigital`);
-}
-
-function extractHlsUrl(html, sourcePage) {
-  const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']*api\.anivideo\.net\/videohls\.php\?[^"']+)["']/i);
-  if (!iframeMatch) throw new Error('Player HLS não encontrado na página do episódio');
-
-  const playerUrl = new URL(decodeHtml(iframeMatch[1]), sourcePage);
-  const rawHlsUrl = playerUrl.searchParams.get('d');
-  if (!rawHlsUrl) throw new Error('Endereço HLS não encontrado no player');
-
-  const hlsUrl = new URL(rawHlsUrl);
-  const allowedCdn = hlsUrl.hostname === 'mywallpaper-4k-image.net'
-    || hlsUrl.hostname.endsWith('.mywallpaper-4k-image.net');
-  if (hlsUrl.protocol !== 'https:' || !allowedCdn || !hlsUrl.pathname.endsWith('.m3u8')) {
-    throw new Error('O player retornou uma origem de vídeo não permitida');
-  }
-  return hlsUrl.toString();
+function getHlsCandidates(episodeNumber) {
+  const plain = String(episodeNumber);
+  const padded = plain.padStart(2, '0');
+  const names = [plain, padded, `${plain}v2`, `${padded}v2`, `${plain}v3`, `${padded}v3`];
+  return [...new Set(names)].map(name => `${HLS_CDN_BASE}/${name}.mp4/index.m3u8`);
 }
 
 async function getAnimesDigitalStream(episodeNumber) {
@@ -315,22 +232,20 @@ async function getAnimesDigitalStream(episodeNumber) {
     return cached;
   }
 
-  const sourcePage = await getEpisodePageUrl(episodeNumber);
-  console.log(`[source] Buscando episódio ${episodeNumber}: ${sourcePage}`);
-  const page = await httpGet(sourcePage, {
-    ...PROVIDER_HEADERS,
-    'Referer': ANIMES_DIGITAL_CATALOG,
-  });
-  if (page.status !== 200) throw new Error(`Página do episódio retornou HTTP ${page.status}`);
+  for (const url of getHlsCandidates(episodeNumber)) {
+    try {
+      const manifest = await httpGet(url, HLS_HEADERS);
+      if (manifest.status !== 200 || !manifest.body.trimStart().startsWith('#EXTM3U')) continue;
+      const stream = { url, capturedAt: Date.now() };
+      streamCache.set(cacheKey, stream);
+      console.log(`[source] ✅ HLS direto encontrado para episódio ${episodeNumber}`);
+      return stream;
+    } catch (error) {
+      console.warn(`[source] Falha ao testar candidato do episódio ${episodeNumber}: ${error.message}`);
+    }
+  }
 
-  const stream = {
-    url: extractHlsUrl(page.body, sourcePage),
-    sourcePage,
-    capturedAt: Date.now(),
-  };
-  streamCache.set(cacheKey, stream);
-  console.log(`[source] ✅ HLS encontrado para episódio ${episodeNumber}`);
-  return stream;
+  throw new Error(`Vídeo do episódio ${episodeNumber} não encontrado no CDN`);
 }
 
 // ─── API: /api/stream ─────────────────────────────────────────────────────────
@@ -368,11 +283,7 @@ app.get('/api/proxy', async (req, res) => {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
       'Accept': '*/*',
       'Accept-Language': 'pt-BR,pt;q=0.9',
-      'Referer': stream.sourcePage,
-      'Origin': `https://${ANIMES_DIGITAL_HOST}`,
-      'sec-fetch-dest': 'video',
-      'sec-fetch-mode': 'no-cors',
-      'sec-fetch-site': 'cross-site',
+      'Referer': stream.url,
     };
 
     if (rangeHeader) upstreamHeaders['Range'] = rangeHeader;
@@ -528,35 +439,16 @@ app.get('/api/download', async (req, res) => {
   }
 });
 
-// ─── API: /api/meta — thumbnail e título do episódio via og:tags ─────────────
-
-const metaCache = new Map(); // episodeNumber -> { image, title, cachedAt }
-const META_TTL  = 24 * 60 * 60 * 1000; // 24h (og:image é estável)
+// ─── API: /api/meta — metadados locais, sem depender do site de origem ────────
 
 app.get('/api/meta', async (req, res) => {
   try {
     const episodeNumber = parseEpisodeNumber(req.query.episode || req.query.id);
-    const cacheKey = String(episodeNumber);
-    const cached = metaCache.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt < META_TTL) return res.json(cached);
-
-    const sourcePage = await getEpisodePageUrl(episodeNumber);
-    const page = await httpGet(sourcePage, PROVIDER_HEADERS);
-    if (page.status !== 200) throw new Error(`Página do episódio retornou HTTP ${page.status}`);
-
-    const imgMatch = page.body.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-                  || page.body.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    const ttlMatch = page.body.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
-                  || page.body.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
-
-    const result = {
-      image: imgMatch ? imgMatch[1] : null,
-      title: ttlMatch ? ttlMatch[1].replace(/ *[-–|] *Animes Digital.*$/i, '').trim() : null,
+    res.json({
+      image: '/onepiece.jpeg',
+      title: `One Piece — Episódio ${episodeNumber}`,
       cachedAt: Date.now(),
-    };
-
-    metaCache.set(cacheKey, result);
-    res.json(result);
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -573,7 +465,6 @@ app.get('/api/debug', async (req, res) => {
       episode: episodeNumber,
       host: parsed.hostname,
       type: 'hls',
-      sourcePage: stream.sourcePage,
       cached: streamCache.has(String(episodeNumber)),
     });
   } catch (err) {
@@ -585,5 +476,5 @@ app.get('/api/debug', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n🎬 XoxôTV rodando em http://localhost:${PORT}`);
-  console.log('   Fonte: AnimesDigital → Anivideo HLS\n');
+  console.log('   Fonte: CDN HLS direto\n');
 });

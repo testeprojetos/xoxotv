@@ -2342,7 +2342,7 @@
       animeId, animeTitle: currentAnime.title,
       epLabel: ep.label, epTitle: ep.title,
       goyabuId: ep.goyabuId,
-      thumb: ep.thumb || null,
+      thumb: getEpisodeThumb(currentAnime, ep),
       progress: currentTime,
       duration: duration || 0,
       updatedAt: Date.now(),
@@ -2364,7 +2364,7 @@
       epLabel: currentEp.label,
       epTitle: currentEp.title,
       goyabuId: currentEp.goyabuId,
-      thumb: currentEp.thumb || null,
+      thumb: getEpisodeThumb(currentAnime, currentEp),
       progress: completedDuration,
       duration: completedDuration,
       downloadMarkedWatched: true,
@@ -2451,7 +2451,7 @@
         ? formatTime(Math.max(0, last.duration - last.progress)) + ' restando'
         : `${Math.round(lastPct)}% assistido`;
 
-    document.getElementById('continueThumb').src = targetEp.thumb || anime.poster || '';
+    document.getElementById('continueThumb').src = getEpisodeThumb(anime, targetEp);
     document.getElementById('continueEpLabel').textContent = `${anime.title} · ${targetEp.label}`;
     document.getElementById('continueEpTitle').textContent = targetEp.title || '';
     document.getElementById('continueSub').textContent = remaining;
@@ -2483,6 +2483,12 @@
   function getEpisodeNumber(ep) {
     const match = ep.label.match(/\d+/);
     return match ? Number(match[0]) : 0;
+  }
+
+  function getEpisodeThumb(anime, ep) {
+    const remoteThumb = ep && ep.thumb;
+    if (remoteThumb && !remoteThumb.includes('goyabu.io')) return remoteThumb;
+    return (anime && anime.poster) || '/onepiece.jpeg';
   }
 
   function getArcById(arcId) {
@@ -2534,8 +2540,9 @@
     const card = document.createElement('div');
     card.className = 'ep-card';
     card.dataset.goyabuId = ep.goyabuId;
-    const thumbHtml = ep.thumb
-      ? `<img src="${ep.thumb}" alt="${ep.label}" loading="lazy" />`
+    const thumbUrl = getEpisodeThumb(anime, ep);
+    const thumbHtml = thumbUrl
+      ? `<img src="${thumbUrl}" alt="${ep.label}" loading="lazy" />`
       : `<div class="ep-thumb-placeholder">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
             <path d="M4 4l16 8-16 8V4z"/>
@@ -2780,7 +2787,7 @@
     loadingMsg.textContent = 'Carregando episódio...';
     loadingOverlay.classList.add('visible');
     videoPlayer.style.opacity = '0';
-    videoPlayer.poster = ep.thumb || currentAnime.poster;
+    videoPlayer.poster = getEpisodeThumb(currentAnime, ep);
 
     showView(vPlayer);
 
