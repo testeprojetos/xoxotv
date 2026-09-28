@@ -1121,7 +1121,7 @@
       <div class="spinner"></div>
       <p id="loadingMsg">Carregando...</p>
     </div>
-    <video id="videoPlayer" controls preload="metadata"></video>
+    <video id="videoPlayer" controls autoplay playsinline preload="metadata"></video>
   </div>
 
   <div class="player-meta" id="playerMeta">
@@ -2677,11 +2677,17 @@
       if (loadToken !== streamLoadToken) return;
       if (resumeAt > 5 && Number.isFinite(videoPlayer.duration)) videoPlayer.currentTime = resumeAt;
       revealPlayer();
+      const playAttempt = videoPlayer.play();
+      if (playAttempt) {
+        playAttempt.catch(error => {
+          console.info('Autoplay bloqueado pelo navegador:', error.message);
+        });
+      }
     };
 
     if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-      videoPlayer.src = streamUrl;
       videoPlayer.addEventListener('loadedmetadata', resumeWhenReady, { once: true });
+      videoPlayer.src = streamUrl;
       return;
     }
 
