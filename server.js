@@ -2,7 +2,7 @@ const express    = require('express');
 const https      = require('https');
 const path       = require('path');
 const crypto     = require('crypto');
-const { execFile } = require('child_process');
+const { spawn } = require('child_process');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -37,11 +37,19 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '8kb' }));
+app.get('/vendor/hls.min.js', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules', 'hls.js', 'dist', 'hls.min.js'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
-const streamCache = new Map(); // episodeId -> { url, capturedAt }
-const STREAM_TTL  = 5 * 60 * 60 * 1000; // 5 horas (googlevideo expira em ~6h)
+const streamCache = new Map(); // episodeNumber -> { url, sourcePage, capturedAt }
+const episodePageCache = new Map(); // episodeNumber -> URL da página no provedor
+const STREAM_TTL = 24 * 60 * 60 * 1000;
+const CATALOG_TTL = 60 * 60 * 1000;
+const ANIMES_DIGITAL_CATALOG = 'https://animesdigital.org/anime/a/onepiecx001';
+const ANIMES_DIGITAL_HOST = 'animesdigital.org';
+let catalogFirstPageCache = null;
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
@@ -54,30 +62,6 @@ function httpGet(url, headers = {}) {
     });
     req.on('error', reject);
     req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
-  });
-}
-
-function httpPost(url, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const req = https.request({
-      hostname: u.hostname,
-      path: u.pathname + u.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'Content-Length': Buffer.byteLength(body),
-        ...headers,
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => resolve({ status: res.statusCode, body: data }));
-    });
-    req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
-    req.write(body);
-    req.end();
   });
 }
 
@@ -203,13 +187,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// ─── Extrai ID/URL do episódio ────────────────────────────────────────────────
-
-function extractEpisodeId(raw) {
-  const m = raw.match(/goyabu\.io\/(\d+)/);
-  if (m) return m[1];
-  return /^\d+$/.test(raw.trim()) ? raw.trim() : raw.trim();
-}
+// ─── Download ──────────────────────────────────────────────────────────────────────────
 
 function safeDownloadFilename(raw, episodeId) {
   const fallback = `XoxoTV - Episodio ${episodeId}`;
@@ -225,218 +203,163 @@ function safeDownloadFilename(raw, episodeId) {
   return `${base}.mp4`;
 }
 
-// ─── Opção 1: yt-dlp ──────────────────────────────────────────────────────────
-// yt-dlp sabe extrair vídeos do Blogger. A URL gerada fica vinculada ao IP do
-// servidor que fez a requisição, então proxy e extração são feitos do mesmo IP.
+// ─── Fonte de vídeo ────────────────────────────────────────────────────────────────
+// O histórico continua usando os IDs antigos no navegador, mas a reprodução
+// resolve o número exibido do episódio no catálogo do AnimesDigital.
+const PROVIDER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9',
+};
 
-function ytdlpGetUrl(bloggerToken) {
-  return new Promise((resolve, reject) => {
-    const bloggerUrl = `https://www.blogger.com/video.g?token=${bloggerToken}`;
-    console.log('[yt-dlp] Extraindo URL de:', bloggerUrl);
+function parseEpisodeNumber(raw) {
+  const normalized = String(raw || '').trim();
+  const value = /^\d+$/.test(normalized) ? Number.parseInt(normalized, 10) : Number.NaN;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 5000) {
+    throw new Error('Número de episódio inválido');
+  }
+  return value;
+}
 
-    // Prioriza MP4 combinado (vídeo + áudio) para o proxy receber uma única URL.
-    execFile('yt-dlp', [
-      '-f', '22/best[ext=mp4]/best',
-      '--get-url',
-      '--no-playlist',
-      bloggerUrl,
-    ], { timeout: 30000 }, (err, stdout, stderr) => {
-      if (err) {
-        console.error('[yt-dlp] Erro:', stderr || err.message);
-        return reject(new Error('yt-dlp falhou: ' + (stderr || err.message).split('\n')[0]));
-      }
-      const url = stdout.trim().split('\n')[0];
-      if (!url || !url.startsWith('http')) {
-        return reject(new Error('yt-dlp não retornou URL válida'));
-      }
-      console.log('[yt-dlp] ✅ URL obtida:', url.substring(0, 80) + '...');
-      resolve(url);
+function decodeHtml(value) {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&#0*38;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'");
+}
+
+function parseCatalogEntries(html) {
+  const entries = [];
+  const pattern = /href=["'](?<url>https:\/\/animesdigital\.org\/video\/a\/[^"']+)["'][\s\S]{0,900}?class=["']title_anime["']>(?<title>[^<]+)</gi;
+  let match;
+  while ((match = pattern.exec(html)) !== null) {
+    const numberMatch = match.groups.title.match(/Epis[oó]dio\s+0*(\d+)/i);
+    if (!numberMatch) continue;
+    entries.push({
+      episodeNumber: Number.parseInt(numberMatch[1], 10),
+      url: match.groups.url,
     });
-  });
+  }
+  return entries;
 }
 
-// ─── Opção 2: batchexecute direto ─────────────────────────────────────────────
-// Acessa a API interna do Blogger para obter a URL sem browser.
-// ATENÇÃO: a URL gerada fica vinculada ao IP do servidor → proxy do mesmo servidor
-// pode funcionar, mas não é garantido (depende se o Google assina por IP ou sessão).
-
-async function batchexecuteGetUrl(bloggerToken) {
-  const bloggerUrl = `https://www.blogger.com/video.g?token=${bloggerToken}`;
-  console.log('[batch] Passo 1: buscando f.sid e bl...');
-
-  const res = await httpGet(bloggerUrl, {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-    'Referer': 'https://goyabu.io/',
-  });
-
-  const fidMatch = res.body.match(/"FdrFJe"\s*:\s*"([^"]+)"/);
-  if (!fidMatch) throw new Error('f.sid não encontrado na página do Blogger');
-  const fSid = fidMatch[1];
-
-  const blMatch = res.body.match(/boq_bloggeruiserver_[0-9_a-zA-Z.]+/);
-  const bl = blMatch ? blMatch[0] : 'boq_bloggeruiserver_20260630.06_p0';
-
-  const cookieHeader = res.headers['set-cookie'];
-  const cookies = cookieHeader
-    ? (Array.isArray(cookieHeader) ? cookieHeader : [cookieHeader])
-        .map(c => c.split(';')[0])
-        .join('; ')
-    : '';
-
-  console.log(`[batch] f.sid=${fSid.substring(0, 16)}... bl=${bl}`);
-
-  const batchUrl  = `https://www.blogger.com/_/BloggerVideoPlayerUi/data/batchexecute`
-    + `?rpcids=WcwnYd&source-path=%2Fvideo.g&f.sid=${fSid}&bl=${bl}&hl=pt-BR&_reqid=44365&rt=c`;
-  const batchBody = `f.req=%5B%5B%5B%22WcwnYd%22%2C%22%5B%5C%22${encodeURIComponent(bloggerToken)}%5C%22%5D%22%2Cnull%2C%221%22%5D%5D%5D&at=&`;
-
-  console.log('[batch] Passo 2: batchexecute...');
-  const batch = await httpPost(batchUrl, batchBody, {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-    'Referer': bloggerUrl,
-    'Origin': 'https://www.blogger.com',
-    'Cookie': cookies,
-    'X-Same-Domain': '1',
-  });
-
-  if (batch.status !== 200) throw new Error(`batchexecute retornou HTTP ${batch.status}`);
-
-  const inner = batch.body.match(/"WcwnYd","([\s\S]+?)",null,null,null/);
-  if (!inner) throw new Error('Resposta inesperada do batchexecute (sem WcwnYd)');
-
-  const decoded = inner[1]
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/\\([=&])/g, '$1');
-
-  // Extrai todas as URLs do googlevideo e filtra por itag=22 (720p)
-  const urlRe = /(https:\/\/[^"\\]+googlevideo[^"\\]+)/g;
-  const urls = [];
-  let m;
-  while ((m = urlRe.exec(decoded)) !== null) {
-    try {
-      const u = new URL(m[1]);
-      urls.push({ url: m[1], itag: u.searchParams.get('itag') });
-    } catch (_) {}
-  }
-
-  console.log(`[batch] URLs encontradas: ${urls.map(u => 'itag=' + u.itag).join(', ')}`);
-
-  const hd = urls.find(u => u.itag === '22');
-  if (hd) return hd.url;
-
-  const sd = urls.find(u => u.itag === '18');
-  if (sd) {
-    console.log('[batch] ⚠ 720p não encontrado, usando 360p (itag=18)');
-    return sd.url;
-  }
-
-  if (urls.length > 0) {
-    console.log('[batch] ⚠ itag 22/18 não encontrado, usando primeira URL disponível');
-    return urls[0].url;
-  }
-
-  throw new Error('Nenhuma URL de vídeo encontrada na resposta do batchexecute');
+function rememberCatalogEntries(entries) {
+  for (const entry of entries) episodePageCache.set(entry.episodeNumber, entry.url);
 }
 
-// ─── Extrai token do Blogger a partir da página do Goyabu ────────────────────
-
-async function extractBloggerToken(episodeId) {
-  const goyabuUrl = `https://goyabu.io/${episodeId}`;
-  console.log(`[token] Buscando token em: ${goyabuUrl}`);
-
-  const res = await httpGet(goyabuUrl, {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'pt-BR,pt;q=0.9',
-  });
-
-  if (res.status === 301 || res.status === 302) {
-    throw new Error(`Goyabu redirecionou (${res.status}) — ID inválido?`);
+async function fetchCatalogPage(page = 1) {
+  if (page === 1 && catalogFirstPageCache &&
+      Date.now() - catalogFirstPageCache.capturedAt < CATALOG_TTL) {
+    return catalogFirstPageCache.entries;
   }
 
-  // Padrões de onde o token pode aparecer no HTML
-  const patterns = [
-    /blogger\.com\/video\.g\?token=([A-Za-z0-9_\-=+/]{20,})/,
-    /\\"token\\":\s*\\"([A-Za-z0-9_\-=+/]{20,})\\"/,
-    /token=([A-Za-z0-9_\-=+/]{20,})/,
-  ];
-
-  for (const pat of patterns) {
-    const match = res.body.match(pat);
-    if (match) {
-      console.log(`[token] ✅ Token encontrado (${match[1].substring(0, 20)}...)`);
-      return match[1];
-    }
+  const url = page === 1 ? ANIMES_DIGITAL_CATALOG : `${ANIMES_DIGITAL_CATALOG}/page/${page}/`;
+  const response = await httpGet(url, PROVIDER_HEADERS);
+  if (response.status !== 200) {
+    throw new Error(`Catálogo do AnimesDigital retornou HTTP ${response.status}`);
   }
 
-  throw new Error('Token do Blogger não encontrado na página do Goyabu');
+  const entries = parseCatalogEntries(response.body);
+  if (!entries.length) throw new Error('Lista de episódios não encontrada no AnimesDigital');
+  rememberCatalogEntries(entries);
+  if (page === 1) catalogFirstPageCache = { entries, capturedAt: Date.now() };
+  return entries;
 }
 
-// ─── Pipeline principal ───────────────────────────────────────────────────────
+async function getEpisodePageUrl(episodeNumber) {
+  if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
 
-async function getStreamUrl(episodeId) {
-  // Verifica cache
-  const cached = streamCache.get(episodeId);
+  const firstPageEntries = await fetchCatalogPage(1);
+  if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
+
+  const newestEpisode = Math.max(...firstPageEntries.map(entry => entry.episodeNumber));
+  const pageSize = firstPageEntries.length;
+  const expectedPage = Math.floor((newestEpisode - episodeNumber) / pageSize) + 1;
+  if (expectedPage < 1) throw new Error(`Episódio ${episodeNumber} ainda não está disponível`);
+
+  await fetchCatalogPage(expectedPage);
+  if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
+
+  for (const adjacentPage of [expectedPage - 1, expectedPage + 1]) {
+    if (adjacentPage < 1) continue;
+    await fetchCatalogPage(adjacentPage);
+    if (episodePageCache.has(episodeNumber)) return episodePageCache.get(episodeNumber);
+  }
+
+  throw new Error(`Episódio ${episodeNumber} não encontrado no AnimesDigital`);
+}
+
+function extractHlsUrl(html, sourcePage) {
+  const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']*api\.anivideo\.net\/videohls\.php\?[^"']+)["']/i);
+  if (!iframeMatch) throw new Error('Player HLS não encontrado na página do episódio');
+
+  const playerUrl = new URL(decodeHtml(iframeMatch[1]), sourcePage);
+  const rawHlsUrl = playerUrl.searchParams.get('d');
+  if (!rawHlsUrl) throw new Error('Endereço HLS não encontrado no player');
+
+  const hlsUrl = new URL(rawHlsUrl);
+  const allowedCdn = hlsUrl.hostname === 'mywallpaper-4k-image.net'
+    || hlsUrl.hostname.endsWith('.mywallpaper-4k-image.net');
+  if (hlsUrl.protocol !== 'https:' || !allowedCdn || !hlsUrl.pathname.endsWith('.m3u8')) {
+    throw new Error('O player retornou uma origem de vídeo não permitida');
+  }
+  return hlsUrl.toString();
+}
+
+async function getAnimesDigitalStream(episodeNumber) {
+  const cacheKey = String(episodeNumber);
+  const cached = streamCache.get(cacheKey);
   if (cached && Date.now() - cached.capturedAt < STREAM_TTL) {
-    console.log(`[cache] ✅ Usando cache para episódio ${episodeId}`);
-    return cached.url;
+    console.log(`[cache] ✅ Usando HLS em cache para episódio ${episodeNumber}`);
+    return cached;
   }
 
-  // Passo 1: extrai token do Blogger a partir da página do Goyabu
-  const token = await extractBloggerToken(episodeId);
+  const sourcePage = await getEpisodePageUrl(episodeNumber);
+  console.log(`[source] Buscando episódio ${episodeNumber}: ${sourcePage}`);
+  const page = await httpGet(sourcePage, {
+    ...PROVIDER_HEADERS,
+    'Referer': ANIMES_DIGITAL_CATALOG,
+  });
+  if (page.status !== 200) throw new Error(`Página do episódio retornou HTTP ${page.status}`);
 
-  // Passo 2: tenta batchexecute direto (estratégia principal)
-  let videoUrl = null;
-
-  try {
-    videoUrl = await batchexecuteGetUrl(token);
-    console.log('[pipeline] ✅ batchexecute funcionou');
-  } catch (err) {
-    console.warn('[pipeline] batchexecute falhou, tentando yt-dlp:', err.message);
-  }
-
-  // Passo 3: fallback para yt-dlp
-  if (!videoUrl) {
-    try {
-      videoUrl = await ytdlpGetUrl(token);
-      console.log('[pipeline] ✅ yt-dlp funcionou');
-    } catch (err) {
-      throw new Error('Todas as estratégias falharam: ' + err.message);
-    }
-  }
-
-  streamCache.set(episodeId, { url: videoUrl, capturedAt: Date.now() });
-  return videoUrl;
+  const stream = {
+    url: extractHlsUrl(page.body, sourcePage),
+    sourcePage,
+    capturedAt: Date.now(),
+  };
+  streamCache.set(cacheKey, stream);
+  console.log(`[source] ✅ HLS encontrado para episódio ${episodeNumber}`);
+  return stream;
 }
 
 // ─── API: /api/stream ─────────────────────────────────────────────────────────
 
 app.get('/api/stream', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'Parâmetro "url" obrigatório' });
-
-  const id = extractEpisodeId(url);
-  console.log(`\n[API] /api/stream id=${id}`);
-
   try {
-    await getStreamUrl(id); // só para validar / cachear
-    res.json({ url: `/api/proxy?id=${encodeURIComponent(id)}`, quality: '720p' });
+    const episodeNumber = parseEpisodeNumber(req.query.episode);
+    console.log(`\n[API] /api/stream episode=${episodeNumber}`);
+    await getAnimesDigitalStream(episodeNumber);
+    res.json({
+      url: `/api/proxy?episode=${episodeNumber}`,
+      downloadUrl: `/api/download?episode=${episodeNumber}`,
+      type: 'hls',
+      quality: 'HD',
+    });
   } catch (err) {
     console.error('[API] Erro:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── API: /api/proxy — pipe da URL do googlevideo ────────────────────────────
-// A URL foi gerada pelo mesmo servidor (mesmo IP que vai fazer o pipe),
-// então não há problema de IP assinado diferente.
+// ─── API: /api/proxy — entrega o manifesto HLS ao player ──────────────────
 
 app.get('/api/proxy', async (req, res) => {
-  const { id, download, filename } = req.query;
-  if (!id) return res.status(400).send('Parâmetro "id" obrigatório');
-  console.log(`\n[PROXY] id=${id}`);
-
   try {
-    let videoUrl = await getStreamUrl(id);
+    const episodeNumber = parseEpisodeNumber(req.query.episode);
+    const stream = await getAnimesDigitalStream(episodeNumber);
+    const videoUrl = stream.url;
+    console.log(`\n[PROXY] episode=${episodeNumber}`);
     console.log(`[PROXY] Piping: ${videoUrl.substring(0, 80)}...`);
 
     const rangeHeader = req.headers['range'];
@@ -445,8 +368,8 @@ app.get('/api/proxy', async (req, res) => {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
       'Accept': '*/*',
       'Accept-Language': 'pt-BR,pt;q=0.9',
-      'Referer': 'https://www.blogger.com/',
-      'Origin': 'https://www.blogger.com',
+      'Referer': stream.sourcePage,
+      'Origin': `https://${ANIMES_DIGITAL_HOST}`,
       'sec-fetch-dest': 'video',
       'sec-fetch-mode': 'no-cors',
       'sec-fetch-site': 'cross-site',
@@ -466,8 +389,7 @@ app.get('/api/proxy', async (req, res) => {
       console.log(`[PROXY] upstream status: ${status}`);
 
       if (status === 403 || status === 410) {
-        // URL expirada ou inválida — limpa cache e pede retry
-        streamCache.delete(id);
+        streamCache.delete(String(episodeNumber));
         if (!res.headersSent) {
           res.status(503).json({ error: 'Stream expirado, clique em Assistir novamente' });
         }
@@ -481,10 +403,6 @@ app.get('/api/proxy', async (req, res) => {
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'no-store',
       };
-      if (download === '1') {
-        const safeName = safeDownloadFilename(filename, id);
-        clientHeaders['Content-Disposition'] = `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
-      }
       if (upstreamRes.headers['content-length'])
         clientHeaders['Content-Length'] = upstreamRes.headers['content-length'];
       if (upstreamRes.headers['content-range'])
@@ -515,26 +433,116 @@ app.get('/api/proxy', async (req, res) => {
   }
 });
 
+let activeDownloads = 0;
+let ffmpegHlsOptionsPromise = null;
+
+function getFfmpegHlsOptions() {
+  if (ffmpegHlsOptionsPromise) return ffmpegHlsOptionsPromise;
+  ffmpegHlsOptionsPromise = new Promise((resolve, reject) => {
+    const probe = spawn('ffmpeg', ['-hide_banner', '-h', 'demuxer=hls'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    probe.stdout.on('data', chunk => { output += chunk.toString(); });
+    probe.stderr.on('data', chunk => { output += chunk.toString(); });
+    probe.on('error', reject);
+    probe.on('close', code => {
+      if (code !== 0) return reject(new Error('FFmpeg indisponível'));
+      resolve(output.includes('extension_picky')
+        ? ['-extension_picky', '0']
+        : ['-allowed_extensions', 'ALL']);
+    });
+  });
+  return ffmpegHlsOptionsPromise;
+}
+
+app.get('/api/download', async (req, res) => {
+  if (activeDownloads >= 2) {
+    return res.status(429).json({ error: 'Já existem dois downloads sendo preparados. Tente novamente em instantes.' });
+  }
+
+  let converter = null;
+  let counted = false;
+  let finished = false;
+  let clientClosed = false;
+  try {
+    const episodeNumber = parseEpisodeNumber(req.query.episode);
+    const stream = await getAnimesDigitalStream(episodeNumber);
+    const ffmpegHlsOptions = await getFfmpegHlsOptions();
+    const safeName = safeDownloadFilename(req.query.filename, episodeNumber);
+    activeDownloads += 1;
+    counted = true;
+
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    converter = spawn('ffmpeg', [
+      '-hide_banner',
+      '-loglevel', 'error',
+      ...ffmpegHlsOptions,
+      '-i', stream.url,
+      '-map', '0:v?',
+      '-map', '0:a?',
+      '-c', 'copy',
+      '-bsf:a', 'aac_adtstoasc',
+      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+      '-f', 'mp4',
+      'pipe:1',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let converterError = '';
+    converter.stderr.on('data', chunk => {
+      converterError = (converterError + chunk.toString()).slice(-4000);
+    });
+    converter.stdout.pipe(res);
+
+    converter.on('error', error => {
+      console.error('[download] Não foi possível iniciar o FFmpeg:', error.message);
+      if (!res.headersSent) res.status(500).json({ error: 'Conversor de download indisponível' });
+      else res.destroy(error);
+    });
+    converter.on('close', code => {
+      finished = true;
+      if (counted) activeDownloads = Math.max(0, activeDownloads - 1);
+      counted = false;
+      if (code !== 0 && !clientClosed) {
+        console.error(`[download] FFmpeg encerrou com código ${code}: ${converterError.trim()}`);
+        if (!res.headersSent) res.status(502).json({ error: 'Não foi possível preparar o episódio' });
+        else if (!res.writableEnded) res.destroy();
+      }
+    });
+
+    res.on('close', () => {
+      if (!finished && converter && !converter.killed) {
+        clientClosed = true;
+        converter.kill('SIGKILL');
+      }
+    });
+  } catch (err) {
+    if (converter && !converter.killed) converter.kill('SIGKILL');
+    if (counted) activeDownloads = Math.max(0, activeDownloads - 1);
+    console.error('[download] Erro:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── API: /api/meta — thumbnail e título do episódio via og:tags ─────────────
 
-const metaCache = new Map(); // episodeId -> { image, title, cachedAt }
+const metaCache = new Map(); // episodeNumber -> { image, title, cachedAt }
 const META_TTL  = 24 * 60 * 60 * 1000; // 24h (og:image é estável)
 
 app.get('/api/meta', async (req, res) => {
-  const { id } = req.query;
-  if (!id) return res.status(400).json({ error: 'id obrigatório' });
-
-  const cached = metaCache.get(id);
-  if (cached && Date.now() - cached.cachedAt < META_TTL) {
-    return res.json(cached);
-  }
-
   try {
-    const page = await httpGet(`https://goyabu.io/${id}`, {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-      'Accept': 'text/html',
-      'Accept-Language': 'pt-BR,pt;q=0.9',
-    });
+    const episodeNumber = parseEpisodeNumber(req.query.episode || req.query.id);
+    const cacheKey = String(episodeNumber);
+    const cached = metaCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < META_TTL) return res.json(cached);
+
+    const sourcePage = await getEpisodePageUrl(episodeNumber);
+    const page = await httpGet(sourcePage, PROVIDER_HEADERS);
+    if (page.status !== 200) throw new Error(`Página do episódio retornou HTTP ${page.status}`);
 
     const imgMatch = page.body.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
                   || page.body.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
@@ -543,11 +551,11 @@ app.get('/api/meta', async (req, res) => {
 
     const result = {
       image: imgMatch ? imgMatch[1] : null,
-      title: ttlMatch ? ttlMatch[1].replace(/ *[-–|] *Goyabu.*$/i, '').trim() : null,
+      title: ttlMatch ? ttlMatch[1].replace(/ *[-–|] *Animes Digital.*$/i, '').trim() : null,
       cachedAt: Date.now(),
     };
 
-    metaCache.set(id, result);
+    metaCache.set(cacheKey, result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -557,18 +565,16 @@ app.get('/api/meta', async (req, res) => {
 // ─── API: /api/debug — retorna a URL bruta (para diagnóstico) ─────────────────
 
 app.get('/api/debug', async (req, res) => {
-  const { id } = req.query;
-  if (!id) return res.status(400).json({ error: 'id obrigatório' });
   try {
-    const url = await getStreamUrl(id);
-    // Não expõe a URL completa em produção, mas útil para debug local
-    const parsed = new URL(url);
+    const episodeNumber = parseEpisodeNumber(req.query.episode || req.query.id);
+    const stream = await getAnimesDigitalStream(episodeNumber);
+    const parsed = new URL(stream.url);
     res.json({
+      episode: episodeNumber,
       host: parsed.hostname,
-      itag: parsed.searchParams.get('itag'),
-      expire: parsed.searchParams.get('expire'),
-      ip: parsed.searchParams.get('ip'),
-      cached: streamCache.has(id),
+      type: 'hls',
+      sourcePage: stream.sourcePage,
+      cached: streamCache.has(String(episodeNumber)),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -579,5 +585,5 @@ app.get('/api/debug', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n🎬 XoxôTV rodando em http://localhost:${PORT}`);
-  console.log('   Pipeline: batchexecute → yt-dlp (fallback)\n');
+  console.log('   Fonte: AnimesDigital → Anivideo HLS\n');
 });

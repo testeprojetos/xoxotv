@@ -11,6 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/favicon.PNG" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <script src="/vendor/hls.min.js"></script>
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -2144,6 +2145,8 @@
   let saveTimer    = null;
   let toastTimer   = null;
   let currentDownloadUrl = '';
+  let hlsPlayer = null;
+  let streamLoadToken = 0;
   let deferredInstallPrompt = null;
   let currentArcId = ONE_PIECE_ARCS[0].id;
   let currentEpisodePage = 1;
@@ -2645,9 +2648,69 @@
     goToEpisodes(anime);
   }
 
-  function goToCatalog() {
+  function clearVideoSource() {
+    streamLoadToken += 1;
+    if (hlsPlayer) {
+      hlsPlayer.destroy();
+      hlsPlayer = null;
+    }
     videoPlayer.pause();
-    videoPlayer.src = '';
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+  }
+
+  function attachStream(streamUrl, resumeAt) {
+    const loadToken = streamLoadToken;
+    const revealPlayer = () => {
+      if (loadToken !== streamLoadToken) return;
+      videoPlayer.style.opacity = '1';
+      loadingOverlay.classList.remove('visible');
+    };
+    const resumeWhenReady = () => {
+      if (loadToken !== streamLoadToken) return;
+      if (resumeAt > 5 && Number.isFinite(videoPlayer.duration)) videoPlayer.currentTime = resumeAt;
+      revealPlayer();
+    };
+
+    if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+      videoPlayer.src = streamUrl;
+      videoPlayer.addEventListener('loadedmetadata', resumeWhenReady, { once: true });
+      return;
+    }
+
+    if (window.Hls?.isSupported()) {
+      hlsPlayer = new window.Hls({
+        enableWorker: true,
+        backBufferLength: 90,
+      });
+      hlsPlayer.loadSource(streamUrl);
+      hlsPlayer.attachMedia(videoPlayer);
+      videoPlayer.addEventListener('loadedmetadata', resumeWhenReady, { once: true });
+      hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED, revealPlayer);
+      hlsPlayer.on(window.Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) return;
+        if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+          hlsPlayer.startLoad();
+          return;
+        }
+        if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+          hlsPlayer.recoverMediaError();
+          return;
+        }
+        hlsPlayer.destroy();
+        hlsPlayer = null;
+        loadingOverlay.classList.remove('visible');
+        errorBox.textContent = '⚠ Não foi possível reproduzir esta transmissão.';
+        errorBox.classList.add('visible');
+      });
+      return;
+    }
+
+    throw new Error('Este navegador não oferece suporte à reprodução HLS.');
+  }
+
+  function goToCatalog() {
+    clearVideoSource();
     currentAnime = null;
     currentEp    = null;
     renderContinueWatching();
@@ -2655,8 +2718,7 @@
   }
 
   function goToEpisodes(anime) {
-    videoPlayer.pause();
-    videoPlayer.src = '';
+    clearVideoSource();
     currentAnime = anime;
     currentEp    = null;
 
@@ -2675,7 +2737,7 @@
   }
 
   async function playEpisode(ep) {
-    if (!videoPlayer.paused) videoPlayer.pause();
+    clearVideoSource();
     currentEp = ep;
     currentDownloadUrl = '';
     downloadEpisode.disabled = true;
@@ -2723,29 +2785,25 @@
     showView(vPlayer);
 
     try {
-      const res = await fetch(`${API}/api/stream?url=${encodeURIComponent(ep.goyabuId)}`);
+      const episodeNumber = getEpisodeNumber(ep);
+      const res = await fetch(`${API}/api/stream?episode=${episodeNumber}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Erro desconhecido' }));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
       const filename = `${currentAnime.title} - ${ep.label}${ep.title ? ` - ${ep.title}` : ''}`;
-      const separator = data.url.includes('?') ? '&' : '?';
-      currentDownloadUrl = `${API}${data.url}${separator}download=1&filename=${encodeURIComponent(filename)}`;
-      downloadEpisode.disabled = false;
+      currentDownloadUrl = data.downloadUrl
+        ? `${API}${data.downloadUrl}&filename=${encodeURIComponent(filename)}`
+        : '';
+      downloadEpisode.disabled = !currentDownloadUrl;
 
       // Retoma do ponto salvo
       const hist = getEpProgress(currentAnime.id, ep.goyabuId);
       const resumeAt = (hist && hist.duration > 0 && (hist.progress / hist.duration) < 0.92)
         ? hist.progress : 0;
 
-      videoPlayer.src = `${API}${data.url}`;
-      videoPlayer.style.opacity = '1';
-      loadingOverlay.classList.remove('visible');
-
-      videoPlayer.addEventListener('loadedmetadata', () => {
-        if (resumeAt > 5) videoPlayer.currentTime = resumeAt;
-      }, { once: true });
+      attachStream(`${API}${data.url}`, resumeAt);
 
     } catch (err) {
       loadingOverlay.classList.remove('visible');
@@ -2783,7 +2841,7 @@
     confirmDownload.removeAttribute('aria-disabled');
     confirmDownload.removeAttribute('target');
     confirmDownload.removeAttribute('rel');
-    downloadSheetCopy.textContent = 'O arquivo será enviado para a pasta de downloads do aparelho e este episódio será marcado como visto.';
+    downloadSheetCopy.textContent = 'O servidor vai preparar o MP4 e enviá-lo ao navegador. O início pode levar alguns segundos; o episódio será marcado como visto.';
     downloadSheet.hidden = false;
   });
 
@@ -2796,7 +2854,7 @@
     if (!currentDownloadUrl || !currentEp) return;
 
     closeDownloadSheet();
-    showToast('Download enviado ao navegador · episódio marcado como visto');
+    showToast('Preparando MP4 no navegador · episódio marcado como visto');
     markDownloadedAsWatched().catch(error => {
       console.warn('Não foi possível marcar o download no histórico:', error.message);
       showToast('Download iniciado, mas o histórico não foi atualizado');
@@ -2805,6 +2863,13 @@
 
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !downloadSheet.hidden) closeDownloadSheet();
+  });
+
+  videoPlayer.addEventListener('error', () => {
+    if (!currentEp || !videoPlayer.currentSrc || hlsPlayer) return;
+    loadingOverlay.classList.remove('visible');
+    errorBox.textContent = '⚠ Não foi possível carregar o vídeo neste aparelho.';
+    errorBox.classList.add('visible');
   });
 
   // ── Salva progresso enquanto o vídeo toca ──────────────────────────────────
